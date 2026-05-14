@@ -1,0 +1,26 @@
+{
+  "name": "@llm-lens/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@llm-lens/parsers": "workspace:*",
+    "@llm-lens/types": "workspace:*",
+    "fastify": "^4.29.0",
+    "@fastify/cors": "^9.0.0",
+    "fastify-decorators": "^3.16.1",
+    "reflect-metadata": "^0.2.2",
+    "drizzle-orm": "^0.43.1",
+    "@libsql/client": "^0.14.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.3"
+  }
+}

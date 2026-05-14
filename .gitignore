@@ -1,0 +1,12 @@
+.idea/
+node_modules/
+dist/
+.nuxt/
+.output/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+*.db
+*.db-shm
+*.db-wal

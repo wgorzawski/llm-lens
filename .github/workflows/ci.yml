@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Typecheck & Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared packages
+        run: |
+          pnpm --filter @llm-lens/types build
+          pnpm --filter @llm-lens/parsers build
+
+      - name: Run tests
+        run: pnpm --filter @llm-lens/parsers test
+
+      - name: Typecheck API
+        run: pnpm --filter @llm-lens/api typecheck
+
+      - name: Typecheck web
+        run: pnpm --filter @llm-lens/web typecheck
+
+  build:
+    name: Build
+    needs: test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build packages
+        run: |
+          pnpm --filter @llm-lens/types build
+          pnpm --filter @llm-lens/parsers build
+
+      - name: Build API
+        run: pnpm --filter @llm-lens/api build
+
+      - name: Build web
+        run: pnpm --filter @llm-lens/web build
+        env:
+          NUXT_PUBLIC_API_BASE: ${{ vars.API_BASE_URL || 'http://localhost:3001/api' }}

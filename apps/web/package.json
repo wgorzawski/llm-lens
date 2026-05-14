@@ -1,0 +1,22 @@
+{
+  "name": "@llm-lens/web",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "nuxt dev --port 3000",
+    "build": "nuxt build",
+    "preview": "nuxt preview",
+    "typecheck": "nuxt typecheck",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@llm-lens/types": "workspace:*",
+    "nuxt": "^4.4.5",
+    "vue": "^3.5.13",
+    "@unocss/nuxt": "^66.6.8",
+    "unocss": "^66.6.8"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3"
+  }
+}

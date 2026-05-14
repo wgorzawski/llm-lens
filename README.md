@@ -1,0 +1,258 @@
+# LLM Lens
+
+[![CI](https://github.com/wgorzawski/llm-lens/actions/workflows/ci.yml/badge.svg)](https://github.com/wgorzawski/llm-lens/actions/workflows/ci.yml)
+
+A developer tool for ingesting, storing, and visualizing raw LLM API traces. Supports Anthropic, OpenAI, and Vercel AI SDK logs and normalizes them into a unified format for side-by-side inspection.
+
+## Screenshots
+
+### Trace list
+![Trace list](screens/traces-list.png)
+
+### Conversation thread with tool calls
+![Tool calls expanded](screens/trace-tool-calls.png)
+
+### System prompt expanded
+![System prompt](screens/trace-system-prompt.png)
+
+### Trace detail (collapsed view)
+![Trace detail](screens/trace-detail.png)
+
+## Features
+
+- **Unified trace format** — Anthropic, OpenAI, and Vercel AI logs normalized to a single `UnifiedTrace` schema
+- **Chat-style visualization** — role-aware message bubbles (user / assistant / tool)
+- **Tool call inspection** — collapsible blocks showing tool name, JSON input, and results
+- **System prompt viewer** — collapsible, shown once at the top of the thread
+- **Usage stats** — input/output tokens, cache hits (⚡), and latency per trace
+- **Provider filter + pagination** — filter by provider, navigate large trace sets
+- **Raw JSON access** — full original log available at the bottom of every detail page
+- **REST API** — ingest traces programmatically from any language or SDK
+
+## Tech stack
+
+| Layer | Technology |
+|---|---|
+| Frontend | Nuxt 4, Vue 3, UnoCSS |
+| Backend | Fastify 4, fastify-decorators |
+| Database | SQLite via Drizzle ORM + `@libsql/client` |
+| Parsers | Pure TypeScript, zero runtime deps |
+| Tests | Vitest (60 tests) |
+| Monorepo | pnpm workspaces |
+
+## Project structure
+
+```
+llm-lens/
+├── apps/
+│   ├── api/                    # Fastify REST API (port 3001)
+│   │   └── src/
+│   │       ├── controllers/    # Route handlers with @Controller decorators
+│   │       └── db/             # Drizzle schema, client, repository
+│   └── web/                    # Nuxt 4 frontend (port 3000)
+│       └── app/
+│           ├── components/     # ProviderBadge, MessageBubble, ToolCallBlock, …
+│           ├── composables/    # useTraces, useTrace
+│           └── pages/          # / (list), /traces/[id] (detail)
+└── packages/
+    ├── types/                  # @llm-lens/types — UnifiedTrace + provider schemas
+    └── parsers/                # @llm-lens/parsers — parseAnthropicLog, parseOpenAILog, parseVercelAILog
+```
+
+## Getting started
+
+### Prerequisites
+
+- Node.js ≥ 24
+- pnpm ≥ 11
+
+### Install
+
+```bash
+git clone https://github.com/wgorzawski/llm-lens.git
+cd llm-lens
+pnpm install
+```
+
+### Build shared packages
+
+```bash
+pnpm --filter @llm-lens/types build
+pnpm --filter @llm-lens/parsers build
+```
+
+### Run
+
+Start both servers in separate terminals:
+
+```bash
+# Terminal 1 — API (port 3001)
+pnpm --filter @llm-lens/api dev
+
+# Terminal 2 — Frontend (port 3000)
+pnpm --filter @llm-lens/web dev
+```
+
+Open [http://localhost:3000](http://localhost:3000).
+
+The SQLite database is created automatically at `./llm-lens.db` on first run. Override with:
+
+```bash
+DATABASE_URL=file:/path/to/custom.db pnpm --filter @llm-lens/api dev
+```
+
+## API reference
+
+Base URL: `http://localhost:3001/api`
+
+### Ingest a trace
+
+```http
+POST /traces/anthropic
+POST /traces/openai
+POST /traces/vercel-ai
+Content-Type: application/json
+```
+
+Body is the raw request + response log for that provider (see [provider schemas](#provider-schemas)). Returns the normalized `UnifiedTrace` with HTTP 201.
+
+### List traces
+
+```http
+GET /traces?limit=50&offset=0&provider=anthropic
+```
+
+| Query param | Type | Default | Description |
+|---|---|---|---|
+| `limit` | number | `50` | Max results (cap: 200) |
+| `offset` | number | `0` | Pagination offset |
+| `provider` | string | — | Filter: `anthropic` \| `openai` \| `vercel-ai` |
+
+Response:
+
+```json
+{
+  "traces": [...],
+  "total": 42,
+  "limit": 50,
+  "offset": 0
+}
+```
+
+### Get a trace
+
+```http
+GET /traces/:id
+```
+
+### Delete a trace
+
+```http
+DELETE /traces/:id
+```
+
+### Health check
+
+```http
+GET /health
+→ { "status": "ok" }
+```
+
+## Provider schemas
+
+### Anthropic
+
+```json
+{
+  "request": {
+    "model": "claude-sonnet-4-6",
+    "messages": [{ "role": "user", "content": "Hello" }],
+    "system": "You are helpful.",
+    "max_tokens": 1024
+  },
+  "response": {
+    "id": "msg_01abc",
+    "type": "message",
+    "role": "assistant",
+    "content": [{ "type": "text", "text": "Hi there!" }],
+    "model": "claude-sonnet-4-6",
+    "stop_reason": "end_turn",
+    "stop_sequence": null,
+    "usage": { "input_tokens": 12, "output_tokens": 5 }
+  },
+  "timestamp": 1715700000000,
+  "durationMs": 320
+}
+```
+
+### OpenAI
+
+```json
+{
+  "request": {
+    "model": "gpt-4o",
+    "messages": [
+      { "role": "system", "content": "You are helpful." },
+      { "role": "user", "content": "Hello" }
+    ]
+  },
+  "response": {
+    "id": "chatcmpl-abc",
+    "object": "chat.completion",
+    "created": 1715700000,
+    "model": "gpt-4o-2024-08-06",
+    "choices": [{
+      "index": 0,
+      "message": { "role": "assistant", "content": "Hi there!" },
+      "finish_reason": "stop"
+    }],
+    "usage": { "prompt_tokens": 17, "completion_tokens": 5, "total_tokens": 22 }
+  },
+  "durationMs": 410
+}
+```
+
+### Vercel AI SDK
+
+```json
+{
+  "type": "ai.generateText",
+  "operationId": "op-abc",
+  "model": "gpt-4o-mini",
+  "provider": "openai",
+  "timestamp": 1715700000000,
+  "durationMs": 190,
+  "input": {
+    "system": "You are helpful.",
+    "messages": [{ "role": "user", "content": "Hello" }]
+  },
+  "output": {
+    "text": "Hi there!",
+    "finishReason": "stop"
+  },
+  "usage": { "promptTokens": 12, "completionTokens": 5, "totalTokens": 17 }
+}
+```
+
+## Development
+
+### Run tests
+
+```bash
+pnpm --filter @llm-lens/parsers test
+# 60 tests: 15 Anthropic · 20 OpenAI · 25 Vercel AI
+```
+
+### Add a new provider parser
+
+1. Add raw log types to `packages/types/src/providers/<provider>.ts` and export from `packages/types/src/index.ts`
+2. Create `packages/parsers/src/<provider>.ts` implementing `parse<Provider>Log(raw): ParseResult`
+3. Export from `packages/parsers/src/index.ts`
+4. Add a `POST /traces/<provider>` handler in `apps/api/src/controllers/traces.controller.ts`
+5. Add tests in `packages/parsers/src/__tests__/<provider>.test.ts`
+
+### Typecheck all packages
+
+```bash
+pnpm typecheck
+```
