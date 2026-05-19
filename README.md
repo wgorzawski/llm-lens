@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/wgorzawski/llm-lens/actions/workflows/ci.yml/badge.svg)](https://github.com/wgorzawski/llm-lens/actions/workflows/ci.yml)
 
-A developer tool for ingesting, storing, and visualizing raw LLM API traces. Supports Anthropic, OpenAI, and Vercel AI SDK logs and normalizes them into a unified format for side-by-side inspection.
+A tool for ingesting, storing, and visualizing LLM API traces. Supports Anthropic, OpenAI, and Vercel AI SDK logs and normalizes them into a unified format for side-by-side inspection.
 
 ## Screenshots
 

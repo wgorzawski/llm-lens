@@ -3,6 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
+    "prepare": "nuxt prepare",
     "dev": "nuxt dev --port 3000",
     "build": "nuxt build",
     "preview": "nuxt preview",

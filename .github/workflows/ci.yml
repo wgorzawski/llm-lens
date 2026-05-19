@@ -36,6 +36,9 @@ jobs:
       - name: Run tests
         run: pnpm --filter @llm-lens/parsers test
 
+      - name: Prepare Nuxt
+        run: pnpm --filter @llm-lens/web prepare
+
       - name: Typecheck API
         run: pnpm --filter @llm-lens/api typecheck
 
