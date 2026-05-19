@@ -12,6 +12,7 @@
   "dependencies": {
     "@fastify/cors": "^11.2.0",
     "@fastify/jwt": "^10.1.0",
+    "@fastify/oauth2": "^8.2.0",
     "@libsql/client": "^0.14.0",
     "@llm-lens/parsers": "workspace:*",
     "@llm-lens/types": "workspace:*",
