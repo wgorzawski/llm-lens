@@ -18,13 +18,16 @@ export function useTraces(opts?: { provider?: TraceProvider; limit?: number }) {
   async function fetchTraces(offset = 0) {
     pending.value = true;
     error.value = null;
+    const { token } = useAuth();
     const params = new URLSearchParams({
       limit: String(opts?.limit ?? 50),
       offset: String(offset),
     });
     if (opts?.provider) params.set("provider", opts.provider);
     try {
-      const data = await $fetch<TracesPage>(`${apiBase}/traces?${params}`);
+      const data = await $fetch<TracesPage>(`${apiBase}/traces?${params}`, {
+        headers: token.value ? { Authorization: `Bearer ${token.value}` } : {},
+      });
       page.value = data;
     } catch (err) {
       error.value = err instanceof Error ? err.message : String(err);

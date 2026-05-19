@@ -11,8 +11,11 @@ export function useTrace(id: string) {
   async function fetchTrace() {
     pending.value = true;
     error.value = null;
+    const { token } = useAuth();
     try {
-      trace.value = await $fetch<UnifiedTrace>(`${apiBase}/traces/${id}`);
+      trace.value = await $fetch<UnifiedTrace>(`${apiBase}/traces/${id}`, {
+        headers: token.value ? { Authorization: `Bearer ${token.value}` } : {},
+      });
     } catch (err) {
       error.value = err instanceof Error ? err.message : String(err);
     } finally {

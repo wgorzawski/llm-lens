@@ -12,10 +12,11 @@ export class TracesController {
       Querystring: { limit?: string; offset?: string; provider?: string };
     }>
   ) {
+    const userId = request.user.userId;
     const limit = request.query.limit ? parseInt(request.query.limit, 10) : 50;
     const offset = request.query.offset ? parseInt(request.query.offset, 10) : 0;
     const provider = request.query.provider as TraceProvider | undefined;
-    return listTraces({ limit, offset, provider });
+    return listTraces({ limit, offset, provider, userId });
   }
 
   @GET("/:id")
@@ -23,7 +24,7 @@ export class TracesController {
     request: FastifyRequest<{ Params: { id: string } }>,
     reply: FastifyReply
   ) {
-    const trace = await getTrace(request.params.id);
+    const trace = await getTrace(request.params.id, request.user.userId);
     if (!trace) return reply.status(404).send({ error: "Trace not found" });
     return trace;
   }
@@ -35,7 +36,7 @@ export class TracesController {
   ) {
     const result = parseAnthropicLog(request.body);
     if (!result.success) return reply.status(422).send({ error: result.error });
-    const trace = await insertTrace(result.trace);
+    const trace = await insertTrace(result.trace, request.user.userId);
     return reply.status(201).send(trace);
   }
 
@@ -46,7 +47,7 @@ export class TracesController {
   ) {
     const result = parseOpenAILog(request.body);
     if (!result.success) return reply.status(422).send({ error: result.error });
-    const trace = await insertTrace(result.trace);
+    const trace = await insertTrace(result.trace, request.user.userId);
     return reply.status(201).send(trace);
   }
 
@@ -57,7 +58,7 @@ export class TracesController {
   ) {
     const result = parseVercelAILog(request.body);
     if (!result.success) return reply.status(422).send({ error: result.error });
-    const trace = await insertTrace(result.trace);
+    const trace = await insertTrace(result.trace, request.user.userId);
     return reply.status(201).send(trace);
   }
 
@@ -66,7 +67,7 @@ export class TracesController {
     request: FastifyRequest<{ Params: { id: string } }>,
     reply: FastifyReply
   ) {
-    const deleted = await deleteTrace(request.params.id);
+    const deleted = await deleteTrace(request.params.id, request.user.userId);
     if (!deleted) return reply.status(404).send({ error: "Trace not found" });
     return reply.status(204).send();
   }

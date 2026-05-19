@@ -10,16 +10,19 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@fastify/cors": "^11.2.0",
+    "@fastify/jwt": "^10.1.0",
+    "@libsql/client": "^0.14.0",
     "@llm-lens/parsers": "workspace:*",
     "@llm-lens/types": "workspace:*",
-    "fastify": "^4.29.0",
-    "@fastify/cors": "^9.0.0",
-    "fastify-decorators": "^3.16.1",
-    "reflect-metadata": "^0.2.2",
+    "bcryptjs": "^3.0.3",
     "drizzle-orm": "^0.43.1",
-    "@libsql/client": "^0.14.0"
+    "fastify": "^5.8.5",
+    "fastify-decorators": "^3.16.1",
+    "reflect-metadata": "^0.2.2"
   },
   "devDependencies": {
+    "@types/bcryptjs": "^3.0.0",
     "tsx": "^4.19.3",
     "typescript": "^5.8.3"
   }
