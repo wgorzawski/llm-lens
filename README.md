@@ -28,6 +28,7 @@ A tool for ingesting, storing, and visualizing LLM API traces. Supports Anthropi
 - **Provider filter + pagination** — filter by provider, navigate large trace sets
 - **Raw JSON access** — full original log available at the bottom of every detail page
 - **REST API** — ingest traces programmatically from any language or SDK
+- **Auto-instrumentation** — `@llm-lens/instrument` patches your OpenAI client in-place; every call is captured with zero changes to your application logic
 
 ## Tech stack
 
@@ -56,7 +57,8 @@ llm-lens/
 │           └── pages/          # / (list), /traces/[id] (detail)
 └── packages/
     ├── types/                  # @llm-lens/types — UnifiedTrace + provider schemas
-    └── parsers/                # @llm-lens/parsers — parseAnthropicLog, parseOpenAILog, parseVercelAILog
+    ├── parsers/                # @llm-lens/parsers — parseAnthropicLog, parseOpenAILog, parseVercelAILog
+    └── instrument/             # @llm-lens/instrument — auto-instrumentation wrappers (OpenAI, …)
 ```
 
 ## Getting started
@@ -79,6 +81,7 @@ pnpm install
 ```bash
 pnpm --filter @llm-lens/types build
 pnpm --filter @llm-lens/parsers build
+pnpm --filter @llm-lens/instrument build
 ```
 
 ### Run
@@ -100,6 +103,64 @@ The SQLite database is created automatically at `./llm-lens.db` on first run. Ov
 ```bash
 DATABASE_URL=file:/path/to/custom.db pnpm --filter @llm-lens/api dev
 ```
+
+## Auto-instrumentation
+
+`@llm-lens/instrument` is the easiest way to capture traces from your own code. It patches your provider client in-place so that every API call is forwarded to llm-lens automatically — no changes to your existing call sites, no wrapper functions, no manual logging.
+
+**This is not a connector to ChatGPT, Claude.ai, or any other chat interface.** It captures calls that _your own code_ makes to the provider API. If you have a script, backend, agent, or RAG pipeline that calls OpenAI, wrapping the client is all it takes to see every prompt and response in llm-lens.
+
+### How it works
+
+`instrumentOpenAI` replaces `client.chat.completions.create` with a thin wrapper. The wrapper:
+
+1. Calls the real OpenAI API as usual and returns the response to your code unchanged
+2. Records the wall-clock duration
+3. Sends the full request + response to llm-lens in the background (fire-and-forget — your code does not wait for this)
+
+If the llm-lens server is unreachable the error is swallowed silently, or forwarded to your `onError` handler. Instrumentation never throws and never slows down your application.
+
+### OpenAI
+
+Install the package in your project:
+
+```bash
+pnpm add @llm-lens/instrument openai
+```
+
+Wrap your client once at startup:
+
+```ts
+import OpenAI from "openai";
+import { instrumentOpenAI } from "@llm-lens/instrument";
+
+const client = instrumentOpenAI(new OpenAI(), {
+  apiUrl: "http://localhost:3001",
+  apiKey: "your-jwt-token",
+});
+
+// Every call below is now captured automatically
+const response = await client.chat.completions.create({
+  model: "gpt-4o",
+  messages: [{ role: "user", content: "Hello" }],
+});
+```
+
+The JWT token is obtained by logging in to llm-lens at `http://localhost:3000` — copy it from the browser's local storage (`llm_lens_token`) or from the URL after the OAuth redirect.
+
+#### Options
+
+| Option | Type | Required | Description |
+|---|---|---|---|
+| `apiUrl` | `string` | yes | llm-lens API base URL, e.g. `http://localhost:3001` |
+| `apiKey` | `string` | yes | JWT token from the llm-lens login flow |
+| `onError` | `(err: unknown) => void` | no | Called when trace submission fails. Silent by default. |
+
+#### Limitations
+
+- **Streaming is not captured.** Calls with `stream: true` are passed through untouched. Collecting a streaming response would require buffering the entire stream before returning it, which would change the timing semantics for your code.
+- **Only `chat.completions.create` is patched.** Other OpenAI endpoints (embeddings, images, etc.) are not affected.
+- **Requires Node.js ≥ 18** for the built-in `fetch` used to submit traces.
 
 ## API reference
 

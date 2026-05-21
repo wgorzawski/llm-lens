@@ -1,20 +1,118 @@
 import "reflect-metadata";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
+import jwt from "@fastify/jwt";
+import oauth2Plugin, { type OAuth2Namespace } from "@fastify/oauth2";
 import { bootstrap } from "fastify-decorators";
 import { initDb } from "./db/index.js";
 import { TracesController } from "./controllers/traces.controller.js";
+import { AuthController } from "./controllers/auth.controller.js";
+import { findOrCreateOAuthUser } from "./db/users.repository.js";
+
+declare module "fastify" {
+  interface FastifyInstance {
+    googleOAuth2: OAuth2Namespace;
+    githubOAuth2: OAuth2Namespace;
+  }
+}
 
 const server = Fastify({ logger: true });
 
+const apiUrl = process.env["API_URL"] ?? "http://localhost:3001";
+const frontendUrl = process.env["FRONTEND_URL"] ?? "http://localhost:3000";
+
 await server.register(cors, { origin: true });
+await server.register(jwt, {
+  secret: process.env["JWT_SECRET"] ?? "dev-secret-change-in-prod",
+});
+
+await server.register(oauth2Plugin, {
+  name: "googleOAuth2",
+  credentials: {
+    client: {
+      id: process.env["GOOGLE_CLIENT_ID"] ?? "",
+      secret: process.env["GOOGLE_CLIENT_SECRET"] ?? "",
+    },
+    auth: {
+      authorizeHost: "https://accounts.google.com",
+      authorizePath: "/o/oauth2/v2/auth",
+      tokenHost: "https://www.googleapis.com",
+      tokenPath: "/oauth2/v4/token",
+    },
+  },
+  startRedirectPath: "/api/auth/google",
+  callbackUri: `${apiUrl}/api/auth/google/callback`,
+  scope: ["profile", "email"],
+});
+
+await server.register(oauth2Plugin, {
+  name: "githubOAuth2",
+  credentials: {
+    client: {
+      id: process.env["GITHUB_CLIENT_ID"] ?? "",
+      secret: process.env["GITHUB_CLIENT_SECRET"] ?? "",
+    },
+    auth: {
+      tokenHost: "https://github.com",
+      tokenPath: "/login/oauth/access_token",
+      authorizePath: "/login/oauth/authorize",
+    },
+  },
+  startRedirectPath: "/api/auth/github",
+  callbackUri: `${apiUrl}/api/auth/github/callback`,
+  scope: ["user:email"],
+});
+
+server.addHook("preHandler", async (request) => {
+  if (request.url.startsWith("/api/auth") || request.url === "/health") return;
+  await request.jwtVerify();
+});
 
 await server.register(bootstrap, {
   prefix: "/api",
-  controllers: [TracesController],
+  controllers: [TracesController, AuthController],
 });
 
 server.get("/health", async () => ({ status: "ok" }));
+
+server.get("/api/auth/google/callback", async (request, reply) => {
+  const tokenSet = await server.googleOAuth2.getAccessTokenFromAuthorizationCodeFlow(request, reply);
+  const profile = await fetch("https://www.googleapis.com/userinfo/v2/me", {
+    headers: { Authorization: `Bearer ${tokenSet.token.access_token}` },
+  }).then((r) => r.json() as Promise<{ id: string; email: string }>);
+
+  const user = await findOrCreateOAuthUser(profile.email, "google", profile.id);
+  const token = server.jwt.sign({ userId: user.id, email: user.email });
+  return reply.redirect(`${frontendUrl}/auth/callback?token=${token}`);
+});
+
+server.get("/api/auth/github/callback", async (request, reply) => {
+  const tokenSet = await server.githubOAuth2.getAccessTokenFromAuthorizationCodeFlow(request, reply);
+
+  const ghHeaders = {
+    Authorization: `Bearer ${tokenSet.token.access_token}`,
+    Accept: "application/json",
+    "User-Agent": "llm-lens",
+  };
+
+  const profile = await fetch("https://api.github.com/user", { headers: ghHeaders })
+    .then((r) => r.json() as Promise<{ id: number; email: string | null }>);
+
+  let email = profile.email;
+  if (!email) {
+    const emails = await fetch("https://api.github.com/user/emails", { headers: ghHeaders })
+      .then((r) => r.json() as Promise<Array<{ email: string; primary: boolean; verified: boolean }>>);
+    email = emails.find((e) => e.primary && e.verified)?.email ?? null;
+  }
+
+  if (!email) {
+    return reply.redirect(`${frontendUrl}/login?error=no_email`);
+  }
+
+  const user = await findOrCreateOAuthUser(email, "github", String(profile.id));
+  const token = server.jwt.sign({ userId: user.id, email: user.email });
+  return reply.redirect(`${frontendUrl}/auth/callback?token=${token}`);
+});
 
 await initDb();
 

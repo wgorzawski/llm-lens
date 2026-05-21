@@ -10,6 +10,18 @@ const providers: Array<{ value: TraceProvider | ""; label: string }> = [
 
 const selectedProvider = ref<TraceProvider | "">("");
 
+const { logout, token } = useAuth();
+
+function getUserEmail() {
+  if (!token.value) return null;
+  try {
+    const payload = JSON.parse(atob(token.value.split(".")[1]!));
+    return payload.email as string;
+  } catch {
+    return null;
+  }
+}
+
 const { page, pending, error, fetchTraces } = useTraces({
   get provider() {
     return selectedProvider.value || undefined;
@@ -59,6 +71,14 @@ function goToPage(p: number) {
           @click="fetchTraces(page.offset)"
         >
           ↺ Refresh
+        </button>
+
+        <span v-if="getUserEmail()" class="text-sm text-gray-400">{{ getUserEmail() }}</span>
+        <button
+          class="text-sm px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-600 transition-colors"
+          @click="logout()"
+        >
+          Sign out
         </button>
       </div>
     </header>
