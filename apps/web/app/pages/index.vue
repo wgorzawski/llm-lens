@@ -74,6 +74,12 @@ function goToPage(p: number) {
         </button>
 
         <span v-if="getUserEmail()" class="text-sm text-gray-400">{{ getUserEmail() }}</span>
+        <NuxtLink
+          to="/settings"
+          class="text-sm px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-600 transition-colors"
+        >
+          Settings
+        </NuxtLink>
         <button
           class="text-sm px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-600 transition-colors"
           @click="logout()"

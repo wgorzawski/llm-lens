@@ -23,6 +23,16 @@ export const traces = sqliteTable("traces", {
   createdAt: integer("created_at").notNull().default(sql`(unixepoch('now') * 1000)`),
 });
 
+export const apiKeys = sqliteTable("api_keys", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull().references(() => users.id),
+  name: text("name").notNull(),
+  keyHash: text("key_hash").notNull().unique(),
+  lastUsedAt: text("last_used_at"),
+  createdAt: integer("created_at").notNull().default(sql`(unixepoch('now') * 1000)`),
+});
+
 export type TraceRow = typeof traces.$inferSelect;
 export type NewTraceRow = typeof traces.$inferInsert;
 export type UserRow = typeof users.$inferSelect;
+export type ApiKeyRow = typeof apiKeys.$inferSelect;

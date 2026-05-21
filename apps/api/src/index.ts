@@ -7,7 +7,9 @@ import { bootstrap } from "fastify-decorators";
 import { initDb } from "./db/index.js";
 import { TracesController } from "./controllers/traces.controller.js";
 import { AuthController } from "./controllers/auth.controller.js";
+import { ApiKeysController } from "./controllers/api-keys.controller.js";
 import { findOrCreateOAuthUser } from "./db/users.repository.js";
+import { hashKey, findApiKeyByHash, touchApiKey } from "./db/api-keys.repository.js";
 
 declare module "fastify" {
   interface FastifyInstance {
@@ -63,14 +65,26 @@ await server.register(oauth2Plugin, {
   scope: ["user:email"],
 });
 
-server.addHook("preHandler", async (request) => {
+server.addHook("preHandler", async (request, reply) => {
   if (request.url.startsWith("/api/auth") || request.url === "/health") return;
+
+  const authHeader = request.headers.authorization;
+  if (authHeader?.startsWith("Bearer llmlens_sk_")) {
+    const token = authHeader.slice("Bearer ".length);
+    const key = await findApiKeyByHash(hashKey(token));
+    if (!key) return reply.status(401).send({ error: "Invalid API key" });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (request as any).user = { userId: key.userId, email: "" };
+    void touchApiKey(key.id);
+    return;
+  }
+
   await request.jwtVerify();
 });
 
 await server.register(bootstrap, {
   prefix: "/api",
-  controllers: [TracesController, AuthController],
+  controllers: [TracesController, AuthController, ApiKeysController],
 });
 
 server.get("/health", async () => ({ status: "ok" }));

@@ -1,6 +1,6 @@
 import { createClient } from "@libsql/client";
 import { drizzle } from "drizzle-orm/libsql";
-import { traces, users } from "./schema.js";
+import { traces, users, apiKeys } from "./schema.js";
 
 const dbUrl = process.env["DATABASE_URL"] ?? "file:./llm-lens.db";
 
@@ -56,6 +56,17 @@ export async function initDb(): Promise<void> {
   await client.execute(
     `CREATE INDEX IF NOT EXISTS idx_traces_timestamp ON traces (timestamp DESC)`
   );
+
+  await client.execute(`
+    CREATE TABLE IF NOT EXISTS api_keys (
+      id           TEXT    PRIMARY KEY,
+      user_id      TEXT    NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      name         TEXT    NOT NULL,
+      key_hash     TEXT    NOT NULL UNIQUE,
+      last_used_at TEXT,
+      created_at   INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000)
+    )
+  `);
 }
 
-export { traces, users };
+export { traces, users, apiKeys };
