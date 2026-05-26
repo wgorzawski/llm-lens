@@ -554,7 +554,7 @@
     }
 
     /* ─── COMING SOON ─── */
-    #coming-soon {
+    #roadmap {
       background: var(--bg-surface);
       padding: 80px 0;
     }
@@ -604,6 +604,37 @@
       padding: 2px 8px;
       white-space: nowrap;
       flex-shrink: 0;
+    }
+    .shipped-badge {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #4ade80;
+      background: rgba(74,222,128,0.1);
+      border: 1px solid rgba(74,222,128,0.25);
+      border-radius: 100px;
+      padding: 2px 8px;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .soon-card.shipped {
+      opacity: 1;
+    }
+    .soon-group-label {
+      grid-column: 1 / -1;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      padding-bottom: 4px;
+      border-bottom: 1px solid var(--border);
+      margin-top: 8px;
+    }
+    .soon-group-label:first-child {
+      margin-top: 0;
     }
     .soon-desc {
       font-size: 12.5px;
@@ -984,6 +1015,7 @@
     <div class="nav-links">
       <a href="#features">Features</a>
       <a href="#how-it-works">How it works</a>
+      <a href="#roadmap">Roadmap</a>
       <a href="#pricing">Pricing</a>
     </div>
     <div class="nav-actions">
@@ -1316,15 +1348,91 @@
 </section>
 
 <!-- ─── COMING SOON ─── -->
-<section id="coming-soon" class="section" style="padding: 80px 0;">
+<section id="roadmap" class="section" style="padding: 80px 0;">
   <div class="container">
     <div class="center reveal">
       <span class="section-label">Roadmap</span>
-      <h2 class="section-heading">What's coming next.</h2>
-      <p class="section-sub">LLM Lens is actively developed. Here's what's on the horizon — join the waitlist to get early access.</p>
+      <h2 class="section-heading">What we've shipped &amp; what's next.</h2>
+      <p class="section-sub">LLM Lens is actively developed. Here's where we are — and where we're going.</p>
     </div>
 
     <div class="soon-grid">
+
+      <div class="soon-group-label">Shipped</div>
+
+      <article class="soon-card shipped reveal">
+        <div class="soon-header">
+          <div><div class="soon-icon">🔐</div></div>
+          <span class="shipped-badge">Shipped</span>
+        </div>
+        <div class="soon-title">OAuth login</div>
+        <div class="soon-desc">Sign in with Google or GitHub — no password required.</div>
+      </article>
+
+      <article class="soon-card shipped reveal">
+        <div class="soon-header">
+          <div><div class="soon-icon">🔑</div></div>
+          <span class="shipped-badge">Shipped</span>
+        </div>
+        <div class="soon-title">API keys</div>
+        <div class="soon-desc">Named long-lived keys for programmatic trace ingestion from scripts and backends.</div>
+      </article>
+
+      <article class="soon-card shipped reveal">
+        <div class="soon-header">
+          <div><div class="soon-icon">⚡</div></div>
+          <span class="shipped-badge">Shipped</span>
+        </div>
+        <div class="soon-title">Auto-instrumentation</div>
+        <div class="soon-desc">One-line OpenAI client wrapper — every call captured automatically, zero overhead.</div>
+      </article>
+
+      <article class="soon-card shipped reveal">
+        <div class="soon-header">
+          <div><div class="soon-icon">🌐</div></div>
+          <span class="shipped-badge">Shipped</span>
+        </div>
+        <div class="soon-title">Multi-provider support</div>
+        <div class="soon-desc">OpenAI, Anthropic, and Vercel AI SDK logs normalized to a single unified format.</div>
+      </article>
+
+      <article class="soon-card shipped reveal">
+        <div class="soon-header">
+          <div><div class="soon-icon">💬</div></div>
+          <span class="shipped-badge">Shipped</span>
+        </div>
+        <div class="soon-title">Chat-style visualization</div>
+        <div class="soon-desc">Traces rendered as conversation threads with role-aware message bubbles.</div>
+      </article>
+
+      <article class="soon-card shipped reveal">
+        <div class="soon-header">
+          <div><div class="soon-icon">🔧</div></div>
+          <span class="shipped-badge">Shipped</span>
+        </div>
+        <div class="soon-title">Tool call inspector</div>
+        <div class="soon-desc">Collapsible blocks showing tool name, input JSON, and result for every call.</div>
+      </article>
+
+      <article class="soon-card shipped reveal">
+        <div class="soon-header">
+          <div><div class="soon-icon">📈</div></div>
+          <span class="shipped-badge">Shipped</span>
+        </div>
+        <div class="soon-title">Usage stats &amp; latency</div>
+        <div class="soon-desc">Input/output tokens, cache hits, and wall-clock latency per trace.</div>
+      </article>
+
+      <article class="soon-card shipped reveal">
+        <div class="soon-header">
+          <div><div class="soon-icon">🔍</div></div>
+          <span class="shipped-badge">Shipped</span>
+        </div>
+        <div class="soon-title">Provider filter &amp; pagination</div>
+        <div class="soon-desc">Filter traces by provider and navigate large sets with pagination.</div>
+      </article>
+
+      <div class="soon-group-label">Coming soon</div>
 
       <article class="soon-card reveal">
         <div class="soon-header">
