@@ -113,7 +113,7 @@ function onKeydown(e: KeyboardEvent) {
         <UiField
           v-model="name"
           label="Full name"
-          placeholder="Wojciech Górzawski"
+          placeholder="John Doe"
           :auto-focus="true"
         />
 
