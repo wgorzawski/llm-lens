@@ -5,6 +5,8 @@ interface Props {
   placeholder?: string
   error?: boolean
   errorMsg?: string
+  ok?: boolean
+  okMsg?: string
   autoFocus?: boolean
 }
 
@@ -22,7 +24,7 @@ const inputType = computed(() => (isPassword.value && showPassword.value ? 'text
       <span>{{ label }}</span>
       <span v-if="$slots.hint" class="hint"><slot name="hint" /></span>
     </div>
-    <div class="field-input" :class="{ error }">
+    <div class="field-input" :class="{ error, ok: ok && !error }">
       <span v-if="$slots.lead" class="lead"><slot name="lead" /></span>
       <input
         :type="inputType"
@@ -46,12 +48,19 @@ const inputType = computed(() => (isPassword.value && showPassword.value ? 'text
           </svg>
         </button>
       </span>
+      <span v-else-if="$slots.trail" class="trail"><slot name="trail" /></span>
     </div>
     <div v-if="error && errorMsg" class="field-msg error">
       <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
         <path d="M4 4 L12 12 M12 4 L4 12" />
       </svg>
       {{ errorMsg }}
+    </div>
+    <div v-else-if="ok && okMsg" class="field-msg ok">
+      <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M6 4 L10 8 L6 12" />
+      </svg>
+      {{ okMsg }}
     </div>
   </div>
 </template>
@@ -112,6 +121,14 @@ const inputType = computed(() => (isPassword.value && showPassword.value ? 'text
 
 .field-input.error:focus-within {
   box-shadow: 0 0 0 3px oklch(0.68 0.20 25 / 0.18);
+}
+
+.field-input.ok {
+  border-color: var(--success);
+}
+
+.field-input.ok:focus-within {
+  box-shadow: 0 0 0 3px oklch(0.74 0.14 155 / 0.15);
 }
 
 .field-input input {
