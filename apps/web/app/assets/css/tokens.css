@@ -1,0 +1,93 @@
+/* LLM Lens — design tokens */
+:root {
+  --font-sans: "Geist", "Geist Sans", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+
+  --provider-anthropic:    oklch(0.78 0.12 60);
+  --provider-openai:       oklch(0.74 0.13 155);
+  --provider-vercel:       oklch(0.72 0.16 280);
+  --provider-anthropic-bg: oklch(0.78 0.12 60 / 0.14);
+  --provider-openai-bg:    oklch(0.74 0.13 155 / 0.14);
+  --provider-vercel-bg:    oklch(0.72 0.16 280 / 0.14);
+}
+
+:root, [data-theme="dark"] {
+  --bg-0: #07080a;
+  --bg-1: #0c0d10;
+  --bg-2: #131418;
+  --bg-3: #1a1b21;
+  --bg-4: #22232a;
+  --border-0: #1c1d23;
+  --border-1: #2a2b33;
+  --border-2: #3a3b45;
+  --text-0: #ededee;
+  --text-1: #a0a1a8;
+  --text-2: #6a6b73;
+  --text-3: #4a4b53;
+  --accent:        oklch(0.72 0.16 250);
+  --accent-bg:     oklch(0.72 0.16 250 / 0.12);
+  --accent-border: oklch(0.72 0.16 250 / 0.35);
+  --success: oklch(0.74 0.14 155);
+  --warn:    oklch(0.78 0.14 75);
+  --danger:  oklch(0.68 0.20 25);
+  --selection: oklch(0.72 0.16 250 / 0.25);
+}
+
+[data-theme="light"] {
+  --bg-0: #f5f5f4;
+  --bg-1: #fafaf9;
+  --bg-2: #ffffff;
+  --bg-3: #f0f0ee;
+  --bg-4: #e6e6e3;
+  --border-0: #ededeb;
+  --border-1: #e1e1de;
+  --border-2: #c8c8c4;
+  --text-0: #18181a;
+  --text-1: #4a4b50;
+  --text-2: #74747a;
+  --text-3: #9a9aa0;
+  --accent:        oklch(0.55 0.18 250);
+  --accent-bg:     oklch(0.55 0.18 250 / 0.10);
+  --accent-border: oklch(0.55 0.18 250 / 0.30);
+  --success: oklch(0.52 0.14 155);
+  --warn:    oklch(0.62 0.16 75);
+  --danger:  oklch(0.55 0.20 25);
+  --selection: oklch(0.55 0.18 250 / 0.18);
+
+  --provider-anthropic:    oklch(0.54 0.14 60);
+  --provider-openai:       oklch(0.46 0.14 155);
+  --provider-vercel:       oklch(0.46 0.18 280);
+  --provider-anthropic-bg: oklch(0.78 0.12 60 / 0.20);
+  --provider-openai-bg:    oklch(0.74 0.13 155 / 0.18);
+  --provider-vercel-bg:    oklch(0.72 0.16 280 / 0.18);
+}
+
+*,
+*::before,
+*::after { box-sizing: border-box; }
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.4;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  letter-spacing: -0.005em;
+}
+
+::selection { background: var(--selection); }
+
+button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; padding: 0; }
+a { color: inherit; text-decoration: none; }
+input { font: inherit; color: inherit; }
+
+.dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+.dot.ok   { background: var(--success); }
+.dot.warn { background: var(--warn); }
+.dot.err  { background: var(--danger); }
