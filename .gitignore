@@ -10,4 +10,4 @@ dist/
 *.db
 *.db-shm
 *.db-wal
-features.md
+.notes/
