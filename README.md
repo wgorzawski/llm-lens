@@ -4,19 +4,15 @@
 
 A tool for ingesting, storing, and visualizing LLM API traces. Supports Anthropic, OpenAI, and Vercel AI SDK logs and normalizes them into a unified format for side-by-side inspection.
 
+**[→ llm-lens landing page](https://wgorzawski.github.io/llm-lens/)**
+
 ## Screenshots
 
 ### Trace list
-![Trace list](screens/traces-list.png)
+![Trace list](docs/screens/traces-list.png)
 
-### Conversation thread with tool calls
-![Tool calls expanded](screens/trace-tool-calls.png)
-
-### System prompt expanded
-![System prompt](screens/trace-system-prompt.png)
-
-### Trace detail (collapsed view)
-![Trace detail](screens/trace-detail.png)
+### Trace detail
+![Trace detail](docs/screens/trace-detail.png)
 
 ## Features
 
@@ -317,3 +313,14 @@ pnpm --filter @llm-lens/parsers test
 ```bash
 pnpm typecheck
 ```
+
+## Contributing
+
+Contributions are welcome. Please open an issue before submitting a PR for non-trivial changes — it helps avoid duplicate work and misaligned direction.
+
+- **Bug fixes** — open a PR directly with a short description of the problem and the fix
+- **New features** — open an issue first to discuss scope and approach
+- **New provider parsers** — follow the steps in [Add a new provider parser](#add-a-new-provider-parser); include tests
+- **Roadmap items** — check the [landing page](https://wgorzawski.github.io/llm-lens/) for planned features before starting
+
+All parser changes must pass `pnpm --filter @llm-lens/parsers test` with no regressions.
