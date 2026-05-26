@@ -1033,7 +1033,7 @@
           </div>
         </div>
         <div class="browser-screen">
-          <img src="screens/traces-list.png" alt="LLM Lens — traces list view showing captured API calls with model names, token usage, and latency" loading="lazy" />
+          <img src="screens/traces-list.png" alt="LLM Lens — traces list view showing captured API calls with model names, token usage, and latency" loading="lazy" class="zoomable" />
         </div>
       </div>
     </div>
@@ -1178,7 +1178,7 @@
               </div>
             </div>
             <div class="browser-screen">
-              <img src="screens/trace-detail.png" alt="LLM Lens — trace detail showing tool calls in a chat-style visualization" loading="lazy" />
+              <img src="screens/trace-detail.png" alt="LLM Lens — trace detail showing tool calls in a chat-style visualization" loading="lazy" class="zoomable" />
             </div>
           </div>
         </div>
@@ -1611,6 +1611,45 @@
       if (emailDisp) emailDisp.textContent = email;
       formWrap.style.display = 'none';
       thanks.style.display = 'block';
+    });
+  }());
+
+  /* ── Lightbox ── */
+  (function () {
+    var overlay = document.createElement('div');
+    overlay.id = 'lightbox';
+    overlay.innerHTML = '<img id="lightbox-img" src="" alt="" />';
+    document.body.appendChild(overlay);
+
+    var style = document.createElement('style');
+    style.textContent = [
+      '#lightbox{display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.85);backdrop-filter:blur(6px);align-items:center;justify-content:center;cursor:zoom-out;}',
+      '#lightbox.open{display:flex;}',
+      '#lightbox-img{max-width:92vw;max-height:90vh;border-radius:8px;box-shadow:0 8px 48px rgba(0,0,0,.7);animation:lb-in .18s ease;}',
+      '@keyframes lb-in{from{opacity:0;transform:scale(.95)}to{opacity:1;transform:scale(1)}}',
+      '.zoomable{cursor:zoom-in;}'
+    ].join('');
+    document.head.appendChild(style);
+
+    var lbImg = document.getElementById('lightbox-img');
+
+    document.querySelectorAll('.zoomable').forEach(function (img) {
+      img.addEventListener('click', function () {
+        lbImg.src = img.src;
+        lbImg.alt = img.alt;
+        overlay.classList.add('open');
+        document.body.style.overflow = 'hidden';
+      });
+    });
+
+    function close() {
+      overlay.classList.remove('open');
+      document.body.style.overflow = '';
+    }
+
+    overlay.addEventListener('click', close);
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') close();
     });
   }());
 </script>
