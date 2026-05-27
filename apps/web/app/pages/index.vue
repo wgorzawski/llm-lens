@@ -4,29 +4,7 @@ import type { UnifiedTrace, TraceProvider } from "@llm-lens/types";
 definePageMeta({ layout: false });
 useHead({ htmlAttrs: { "data-theme": "dark" } });
 
-// ── helpers ──────────────────────────────────────────────────────────────────
-
-function fmtN(v: number | null | undefined): string {
-  if (v == null) return "—";
-  if (v >= 1000) return (v / 1000).toFixed(v >= 10000 ? 0 : 1) + "k";
-  return v.toString();
-}
-function fmtMs(v: number | null | undefined): string {
-  if (!v) return "—";
-  return v >= 1000 ? (v / 1000).toFixed(2) + "s" : v + "ms";
-}
-function fmtUsd(v: number | null | undefined): string {
-  if (v == null) return "$0";
-  if (v < 0.01) return "$" + v.toFixed(4);
-  if (v < 1) return "$" + v.toFixed(3);
-  return "$" + v.toFixed(2);
-}
-function latClass(ms: number | null | undefined): string {
-  if (!ms) return "";
-  if (ms >= 5000) return "slow";
-  if (ms >= 1500) return "warn";
-  return "";
-}
+// ── helpers ───────────────────────────────────────────────────────────────────
 
 function getSnippet(t: UnifiedTrace): string {
   const first = t.messages.find(m => m.role === "user");
@@ -34,35 +12,6 @@ function getSnippet(t: UnifiedTrace): string {
   if (typeof first.content === "string") return first.content.slice(0, 140);
   const block = (first.content as Array<{ type: string; text?: string }>).find(b => b.type === "text");
   return block?.text?.slice(0, 140) ?? "";
-}
-
-function getRelative(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
-}
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleString("pl-PL", {
-    day: "2-digit", month: "2-digit", year: "numeric",
-    hour: "2-digit", minute: "2-digit",
-  });
-}
-
-function toolCallCount(t: UnifiedTrace): number {
-  return t.messages.reduce((s, m) => s + (m.toolCalls?.length ?? 0), 0);
-}
-
-function hasSystem(t: UnifiedTrace): boolean {
-  return t.messages.some(m => m.role === "system");
-}
-
-function traceName(t: UnifiedTrace): string {
-  return `${t.metadata.model.split("-")[0]}_${t.id.slice(-8)}`;
 }
 
 // ── auth ──────────────────────────────────────────────────────────────────────
@@ -80,9 +29,16 @@ const userName = computed<string>(() => {
 // ── ui state ─────────────────────────────────────────────────────────────────
 
 const section = ref("traces");
-const variant = ref<"list" | "table" | "cards">("list");
+const variant = useCookie<"list" | "table" | "cards">("llm-lens:traces-variant", {
+  default: () => "list",
+  sameSite: "lax",
+});
 const filterProvider = ref<TraceProvider | "all">("all");
-const sort = ref<"recent" | "latency" | "cost">("recent");
+const filterModel = ref("all");
+const filterStatus = ref("all");
+const filterLatency = ref("any");
+const filterRange = ref("24h");
+const sort = ref("recent");
 const selected = ref<Set<string>>(new Set());
 const showTip = ref(true);
 const theme = ref<"dark" | "light">("dark");
@@ -164,16 +120,48 @@ const sidebarItems2 = [
   { id: "settings",   label: "Settings",        icon: "settings" },
 ];
 
-const providerFilters = [
+const providerOptions = [
   { id: "all",       label: "All providers" },
-  { id: "anthropic", label: "Anthropic" },
-  { id: "openai",    label: "OpenAI" },
-  { id: "vercel-ai", label: "Vercel AI" },
-] as const;
-
-function cycleSort() {
-  sort.value = sort.value === "recent" ? "latency" : sort.value === "latency" ? "cost" : "recent";
-}
+  { id: "anthropic", label: "Anthropic",  swatch: "anthropic" },
+  { id: "openai",    label: "OpenAI",     swatch: "openai" },
+  { id: "vercel-ai", label: "Vercel AI",  swatch: "vercel-ai" },
+];
+const modelOptions = [
+  { id: "all",                   label: "All models" },
+  { id: "claude-opus-4-7",       label: "claude-opus-4-7",       hint: "anthropic" },
+  { id: "claude-sonnet-4-6",     label: "claude-sonnet-4-6",     hint: "anthropic" },
+  { id: "claude-haiku-4-5",      label: "claude-haiku-4-5",      hint: "anthropic" },
+  { id: "gpt-4o-2024-08-06",     label: "gpt-4o-2024-08-06",     hint: "openai" },
+  { id: "gpt-4o-mini",           label: "gpt-4o-mini",           hint: "openai · vercel" },
+];
+const statusOptions = [
+  { id: "all",  label: "All statuses" },
+  { id: "ok",   label: "OK",      dot: "ok"   as const },
+  { id: "warn", label: "Warning", dot: "warn" as const },
+  { id: "err",  label: "Error",   dot: "err"  as const },
+];
+const latencyOptions = [
+  { id: "any",      label: "Any" },
+  { id: "fast",     label: "Fast",      hint: "< 500ms" },
+  { id: "med",      label: "Medium",    hint: "0.5–1.5s" },
+  { id: "slow",     label: "Slow",      hint: "> 1.5s" },
+  { id: "verySlow", label: "Very slow", hint: "> 5s" },
+];
+const rangeOptions = [
+  { id: "15m",    label: "Last 15m" },
+  { id: "1h",     label: "Last 1h" },
+  { id: "24h",    label: "Last 24h" },
+  { id: "7d",     label: "Last 7 days" },
+  { id: "30d",    label: "Last 30 days" },
+  { id: "_div",   label: "",  divider: true },
+  { id: "custom", label: "Custom range…" },
+];
+const sortOptions = [
+  { id: "recent",  label: "Most recent" },
+  { id: "latency", label: "Latency (desc)" },
+  { id: "cost",    label: "Cost (desc)" },
+  { id: "tokens",  label: "Tokens (desc)" },
+];
 
 // skeleton rows
 const SKEL_LIST = Array.from({ length: 12 });
@@ -265,40 +253,62 @@ const SKEL_CARDS = Array.from({ length: 9 });
 
       <!-- subbar -->
       <div class="subbar">
-        <button
-          class="chip"
-          :class="{ active: filterProvider !== 'all' }"
-        >
-          <AppIcon name="filter" :size="11" />
-          <span>{{ providerFilters.find(p => p.id === filterProvider)?.label ?? 'All providers' }}</span>
-          <AppIcon name="chevron-down" :size="10" />
-        </button>
-        <button class="chip">
-          <span style="color:var(--text-2)">Model:</span>
-          <span>All</span>
-          <AppIcon name="chevron-down" :size="10" />
-        </button>
-        <button class="chip">
-          <span style="color:var(--text-2)">Status:</span>
-          <span>All</span>
-          <AppIcon name="chevron-down" :size="10" />
-        </button>
-        <button class="chip">
-          <span style="color:var(--text-2)">Range:</span>
-          <span>last 24h</span>
-          <AppIcon name="chevron-down" :size="10" />
-        </button>
-        <button class="chip" style="color:var(--text-2)">
+        <FilterChip
+          icon="filter"
+          :value="filterProvider"
+          default-value="all"
+          :options="providerOptions"
+          :width="170"
+          @change="filterProvider = $event as TraceProvider | 'all'"
+        />
+        <FilterChip
+          label="Model"
+          :value="filterModel"
+          default-value="all"
+          :options="modelOptions"
+          :width="230"
+          @change="filterModel = $event"
+        />
+        <FilterChip
+          label="Status"
+          :value="filterStatus"
+          default-value="all"
+          :options="statusOptions"
+          :width="170"
+          @change="filterStatus = $event"
+        />
+        <FilterChip
+          label="Latency"
+          :value="filterLatency"
+          default-value="any"
+          :options="latencyOptions"
+          :width="200"
+          @change="filterLatency = $event"
+        />
+        <FilterChip
+          label="Range"
+          :value="filterRange"
+          default-value="24h"
+          :options="rangeOptions"
+          :width="180"
+          @change="filterRange = $event"
+        />
+        <button class="chip-plain" style="color:var(--text-2)">
           <AppIcon name="plus" :size="11" /> filter
         </button>
 
         <div style="flex:1" />
 
-        <button class="chip" title="Sort order" @click="cycleSort">
-          <AppIcon name="sort" :size="11" />
-          <span style="color:var(--text-2)">Sort:</span>
-          <span>{{ sort }}</span>
-        </button>
+        <FilterChip
+          icon="sort"
+          label="Sort"
+          :value="sort"
+          default-value="recent"
+          :options="sortOptions"
+          align="right"
+          :width="180"
+          @change="sort = $event"
+        />
         <div class="segmented" role="tablist" aria-label="View">
           <button :class="{ active: variant === 'list' }" @click="variant = 'list'">
             <AppIcon name="list" :size="12" /> List
@@ -904,7 +914,7 @@ const SKEL_CARDS = Array.from({ length: 9 });
   font-size: 12px;
   flex-shrink: 0;
 }
-.chip {
+.chip-plain {
   display: inline-flex; align-items: center; gap: 5px;
   padding: 3px 8px;
   border-radius: 4px;
@@ -916,8 +926,7 @@ const SKEL_CARDS = Array.from({ length: 9 });
   height: 24px;
   white-space: nowrap;
 }
-.chip:hover { color: var(--text-0); border-color: var(--border-2); }
-.chip.active { background: var(--accent-bg); border-color: var(--accent-border); color: var(--accent); }
+.chip-plain:hover { color: var(--text-0); border-color: var(--border-2); }
 .segmented {
   display: inline-flex;
   background: var(--bg-2);

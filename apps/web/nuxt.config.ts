@@ -1,7 +1,7 @@
 export default defineNuxtConfig({
   compatibilityDate: "2026-05-14",
   devtools: { enabled: true },
-  modules: ["@unocss/nuxt"],
+  modules: ["@unocss/nuxt", "@vueuse/nuxt"],
   typescript: { strict: true },
   css: ["~/assets/css/tokens.css"],
   app: {
