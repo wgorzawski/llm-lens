@@ -24,7 +24,7 @@ A tool for ingesting, storing, and visualizing LLM API traces. Supports Anthropi
 - **Provider filter + pagination** — filter by provider, navigate large trace sets
 - **Raw JSON access** — full original log available at the bottom of every detail page
 - **REST API** — ingest traces programmatically from any language or SDK
-- **Auto-instrumentation** — `@llm-lens/instrument` patches your OpenAI client in-place; every call is captured with zero changes to your application logic
+- **Auto-instrumentation** — `@llm-lens/instrument` patches your OpenAI or Anthropic client in-place; every call is captured with zero changes to your application logic
 
 ## Tech stack
 
@@ -46,15 +46,16 @@ llm-lens/
 │   │   └── src/
 │   │       ├── controllers/    # Route handlers with @Controller decorators
 │   │       └── db/             # Drizzle schema, client, repository
-│   └── web/                    # Nuxt 4 frontend (port 3000)
-│       └── app/
-│           ├── components/     # ProviderBadge, MessageBubble, ToolCallBlock, …
-│           ├── composables/    # useTraces, useTrace
-│           └── pages/          # / (list), /traces/[id] (detail)
+│   ├── web/                    # Nuxt 4 frontend (port 3000)
+│   │   └── app/
+│   │       ├── components/     # ProviderBadge, MessageBubble, ToolCallBlock, …
+│   │       ├── composables/    # useTraces, useTrace
+│   │       └── pages/          # / (list), /traces/[id] (detail)
+│   └── playground/             # Vite + Vue demo client (port 5173)
 └── packages/
     ├── types/                  # @llm-lens/types — UnifiedTrace + provider schemas
     ├── parsers/                # @llm-lens/parsers — parseAnthropicLog, parseOpenAILog, parseVercelAILog
-    └── instrument/             # @llm-lens/instrument — auto-instrumentation wrappers (OpenAI, …)
+    └── instrument/             # @llm-lens/instrument — auto-instrumentation wrappers (OpenAI, Anthropic)
 ```
 
 ## Getting started
@@ -104,13 +105,13 @@ DATABASE_URL=file:/path/to/custom.db pnpm --filter @llm-lens/api dev
 
 `@llm-lens/instrument` is the easiest way to capture traces from your own code. It patches your provider client in-place so that every API call is forwarded to llm-lens automatically — no changes to your existing call sites, no wrapper functions, no manual logging.
 
-**This is not a connector to ChatGPT, Claude.ai, or any other chat interface.** It captures calls that _your own code_ makes to the provider API. If you have a script, backend, agent, or RAG pipeline that calls OpenAI, wrapping the client is all it takes to see every prompt and response in llm-lens.
+**This is not a connector to ChatGPT, Claude.ai, or any other chat interface.** It captures calls that _your own code_ makes to the provider API. If you have a script, backend, agent, or RAG pipeline that calls OpenAI or Anthropic, wrapping the client is all it takes to see every prompt and response in llm-lens.
 
 ### How it works
 
-`instrumentOpenAI` replaces `client.chat.completions.create` with a thin wrapper. The wrapper:
+Each `instrument*` function replaces the relevant `create` method with a thin wrapper. The wrapper:
 
-1. Calls the real OpenAI API as usual and returns the response to your code unchanged
+1. Calls the real provider API as usual and returns the response to your code unchanged
 2. Records the wall-clock duration
 3. Sends the full request + response to llm-lens in the background (fire-and-forget — your code does not wait for this)
 
@@ -132,7 +133,7 @@ import { instrumentOpenAI } from "@llm-lens/instrument";
 
 const client = instrumentOpenAI(new OpenAI(), {
   apiUrl: "http://localhost:3001",
-  apiKey: "your-jwt-token",
+  apiKey: "your-api-key",
 });
 
 // Every call below is now captured automatically
@@ -142,21 +143,55 @@ const response = await client.chat.completions.create({
 });
 ```
 
-The JWT token is obtained by logging in to llm-lens at `http://localhost:3000` — copy it from the browser's local storage (`llm_lens_token`) or from the URL after the OAuth redirect.
+### Anthropic
 
-#### Options
+```bash
+pnpm add @llm-lens/instrument @anthropic-ai/sdk
+```
+
+```ts
+import Anthropic from "@anthropic-ai/sdk";
+import { instrumentAnthropic } from "@llm-lens/instrument";
+
+const client = instrumentAnthropic(new Anthropic(), {
+  apiUrl: "http://localhost:3001",
+  apiKey: "your-api-key",
+});
+
+// Every call below is now captured automatically
+const response = await client.messages.create({
+  model: "claude-sonnet-4-6",
+  max_tokens: 1024,
+  messages: [{ role: "user", content: "Hello" }],
+});
+```
+
+The API key is either a JWT token (copy from browser `localStorage` key `llm_lens_token` after OAuth login) or a `llmlens_sk_…` key generated in the settings page.
+
+### Options
 
 | Option | Type | Required | Description |
 |---|---|---|---|
 | `apiUrl` | `string` | yes | llm-lens API base URL, e.g. `http://localhost:3001` |
-| `apiKey` | `string` | yes | JWT token from the llm-lens login flow |
+| `apiKey` | `string` | yes | JWT token or `llmlens_sk_…` API key |
 | `onError` | `(err: unknown) => void` | no | Called when trace submission fails. Silent by default. |
 
-#### Limitations
+### Limitations
 
 - **Streaming is not captured.** Calls with `stream: true` are passed through untouched. Collecting a streaming response would require buffering the entire stream before returning it, which would change the timing semantics for your code.
-- **Only `chat.completions.create` is patched.** Other OpenAI endpoints (embeddings, images, etc.) are not affected.
+- **Only `chat.completions.create` (OpenAI) and `messages.create` (Anthropic) are patched.** Other endpoints (embeddings, images, etc.) are not affected.
 - **Requires Node.js ≥ 18** for the built-in `fetch` used to submit traces.
+
+## Playground
+
+`apps/playground` is a minimal Vite + Vue app that demonstrates end-to-end instrumentation. It simulates an external application that uses llm-lens to observe its LLM calls.
+
+```bash
+pnpm --filter @llm-lens/playground dev
+# → http://localhost:5173
+```
+
+Open **Config**, paste your LLM Lens API key alongside your Anthropic and OpenAI keys (stored in `localStorage`), then type a prompt and click **Send to all providers**. Both providers are called in parallel via their instrumented clients — traces appear in the main llm-lens UI at `http://localhost:3000` immediately.
 
 ## API reference
 
