@@ -651,6 +651,273 @@
       background: var(--bg-base);
     }
 
+    /* ─── NAV DROPDOWN ─── */
+    .nav-dropdown { position: relative; }
+    .nav-dropdown-btn {
+      font-size: 13.5px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      padding: 6px 12px;
+      border-radius: var(--radius-sm);
+      border: none;
+      background: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-family: var(--font-sans);
+      transition: color 0.2s, background 0.2s;
+    }
+    .nav-dropdown-btn:hover,
+    .nav-dropdown.open .nav-dropdown-btn {
+      color: var(--text-primary);
+      background: rgba(255,255,255,0.05);
+    }
+    .nav-dropdown-chevron {
+      color: var(--text-muted);
+      transition: transform 0.2s;
+    }
+    .nav-dropdown.open .nav-dropdown-chevron { transform: rotate(180deg); }
+    .nav-dropdown-menu {
+      position: absolute;
+      top: calc(100% + 8px);
+      left: 0;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-hover);
+      border-radius: var(--radius-lg);
+      padding: 6px;
+      min-width: 180px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(-6px);
+      transition: opacity 0.2s, transform 0.2s;
+      z-index: 200;
+    }
+    .nav-dropdown.open .nav-dropdown-menu {
+      opacity: 1;
+      pointer-events: all;
+      transform: translateY(0);
+    }
+    .nav-dropdown-menu a {
+      display: block;
+      font-size: 13.5px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      padding: 8px 12px;
+      border-radius: var(--radius-sm);
+      transition: color 0.2s, background 0.2s;
+    }
+    .nav-dropdown-menu a:hover {
+      color: var(--text-primary);
+      background: rgba(255,255,255,0.05);
+    }
+
+    /* ─── QUICK START ─── */
+    #quickstart {
+      background: var(--bg-base);
+    }
+    .qs-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      margin-top: 48px;
+      align-items: start;
+    }
+    .qs-label {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--accent-light);
+      margin-bottom: 12px;
+    }
+    .copy-btn {
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: var(--radius-sm);
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      padding: 3px 10px;
+      transition: color 0.2s, background 0.2s, border-color 0.2s;
+    }
+    .copy-btn:hover {
+      color: var(--text-primary);
+      background: rgba(255,255,255,0.1);
+      border-color: rgba(255,255,255,0.2);
+    }
+    .copy-btn.copied {
+      color: var(--green);
+      border-color: rgba(34,197,94,0.3);
+      background: rgba(34,197,94,0.06);
+    }
+
+    /* ─── USE CASES ─── */
+    #use-cases {
+      background: var(--bg-surface);
+    }
+    .usecases-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+      margin-top: 48px;
+    }
+    .usecase-card {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 28px;
+      transition: border-color 0.25s, transform 0.25s;
+    }
+    .usecase-card:hover {
+      border-color: rgba(124,58,237,0.35);
+      transform: translateY(-2px);
+    }
+    .usecase-who {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--cyan);
+      margin-bottom: 14px;
+    }
+    .usecase-card h3 {
+      font-size: 17px;
+      font-weight: 700;
+      margin-bottom: 10px;
+      letter-spacing: -0.01em;
+    }
+    .usecase-card p {
+      font-size: 14px;
+      color: var(--text-secondary);
+      line-height: 1.65;
+      margin-bottom: 18px;
+    }
+    .usecase-tag {
+      display: inline-block;
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      color: var(--accent-light);
+      background: rgba(124,58,237,0.1);
+      border: 1px solid rgba(124,58,237,0.2);
+      border-radius: var(--radius-sm);
+      padding: 4px 10px;
+    }
+
+    /* ─── CONTRIBUTE ─── */
+    #contribute {
+      background: var(--bg-surface);
+    }
+    .contribute-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+      margin-top: 48px;
+    }
+    .contribute-card {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      transition: border-color 0.25s, transform 0.25s;
+      text-decoration: none;
+      color: inherit;
+    }
+    .contribute-card:hover {
+      border-color: rgba(124,58,237,0.4);
+      transform: translateY(-2px);
+    }
+    .contribute-card h3 {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+    .contribute-card p {
+      font-size: 13.5px;
+      color: var(--text-secondary);
+      line-height: 1.6;
+      flex: 1;
+    }
+    .contribute-link {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--accent-light);
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      margin-top: 4px;
+    }
+
+    /* ─── FAQ ─── */
+    #faq {
+      background: var(--bg-base);
+    }
+    .faq-list {
+      max-width: 720px;
+      margin: 48px auto 0;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .faq-item {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      transition: border-color 0.25s;
+    }
+    .faq-item.open {
+      border-color: rgba(124,58,237,0.4);
+    }
+    .faq-q {
+      width: 100%;
+      background: var(--bg-elevated);
+      border: none;
+      text-align: left;
+      padding: 18px 24px;
+      font-family: var(--font-sans);
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text-primary);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      transition: background 0.2s;
+    }
+    .faq-q:hover { background: rgba(255,255,255,0.025); }
+    .faq-chevron {
+      flex-shrink: 0;
+      color: var(--text-muted);
+      transition: transform 0.25s, color 0.25s;
+    }
+    .faq-item.open .faq-chevron {
+      transform: rotate(180deg);
+      color: var(--accent-light);
+    }
+    .faq-a {
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.35s ease;
+    }
+    .faq-a-inner {
+      padding: 14px 24px 18px;
+      font-size: 14px;
+      color: var(--text-secondary);
+      line-height: 1.7;
+      border-top: 1px solid var(--border);
+      background: var(--bg-elevated);
+    }
+    .faq-item.open .faq-a { max-height: 400px; }
+
     /* ─── FINAL CTA ─── */
     #final-cta {
       background: var(--bg-surface);
@@ -727,9 +994,12 @@
     /* ─── Responsive ─── */
     @media (max-width: 900px) {
       .features-grid,
-      .problem-grid {
+      .problem-grid,
+      .usecases-grid,
+      .contribute-grid {
         grid-template-columns: 1fr 1fr;
       }
+      .qs-grid { grid-template-columns: 1fr; }
       .soon-grid {
         grid-template-columns: repeat(2, 1fr);
       }
@@ -747,7 +1017,9 @@
     @media (max-width: 640px) {
       .section { padding: 64px 0; }
       .features-grid,
-      .problem-grid {
+      .problem-grid,
+      .usecases-grid,
+      .contribute-grid {
         grid-template-columns: 1fr;
       }
       .soon-grid {
@@ -779,10 +1051,22 @@
       llm-lens
     </a>
     <div class="nav-links">
+      <a href="#quickstart">Quick Start</a>
       <a href="#features">Features</a>
-      <a href="#how-it-works">How it works</a>
       <a href="#roadmap">Roadmap</a>
-      <a href="#pricing">Open Source</a>
+      <a href="#faq">FAQ</a>
+      <div class="nav-dropdown" id="navMore">
+        <button class="nav-dropdown-btn" id="navMoreBtn" aria-haspopup="true" aria-expanded="false">
+          More
+          <svg class="nav-dropdown-chevron" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 6 8 10 12 6"/></svg>
+        </button>
+        <div class="nav-dropdown-menu" role="menu">
+          <a href="#use-cases" role="menuitem">Use Cases</a>
+          <a href="#how-it-works" role="menuitem">How it works</a>
+          <a href="#pricing" role="menuitem">Open Source</a>
+          <a href="#contribute" role="menuitem">Contribute</a>
+        </div>
+      </div>
     </div>
     <div class="nav-actions">
       <a href="https://github.com/wgorzawski/llm-lens" target="_blank" rel="noopener" class="btn btn-outline">
@@ -888,6 +1172,60 @@
         <p>Token counts are buried in response objects. You find out how much you spent at the end of the month.</p>
       </article>
     </div>
+  </div>
+</section>
+
+<!-- ─── QUICK START ─── -->
+<section id="quickstart" class="section">
+  <div class="container">
+    <div class="center reveal">
+      <span class="section-label">Quick Start</span>
+      <h2 class="section-heading">Up and running<br>in under a minute.</h2>
+      <p class="section-sub">Two steps. No config files, no accounts, no infrastructure.</p>
+    </div>
+
+    <div class="qs-grid">
+
+      <div class="reveal">
+        <div class="qs-label">1 — Start LLM Lens</div>
+        <div class="code-block">
+          <div class="code-header">
+            <span class="code-lang">Terminal</span>
+            <button class="copy-btn">Copy</button>
+          </div>
+          <div class="code-body">
+<pre><span class="cm"># clone and start the server</span>
+<span class="fn">git</span> clone https://github.com/wgorzawski/llm-lens
+<span class="kw">cd</span> llm-lens <span class="op">&amp;&amp;</span> <span class="fn">pnpm</span> install <span class="op">&amp;&amp;</span> <span class="fn">pnpm</span> dev</pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="reveal">
+        <div class="qs-label">2 — Instrument your client</div>
+        <div class="code-block">
+          <div class="code-header">
+            <span class="code-lang">TypeScript</span>
+            <button class="copy-btn">Copy</button>
+          </div>
+          <div class="code-body">
+<pre><span class="kw">import</span> <span class="cn">OpenAI</span> <span class="kw">from</span> <span class="str">"openai"</span><span class="op">;</span>
+<span class="kw">import</span> <span class="op">{</span> <span class="fn">instrumentOpenAI</span> <span class="op">}</span> <span class="kw">from</span> <span class="str">"@llm-lens/instrument"</span><span class="op">;</span>
+
+<span class="kw">const</span> <span class="cn">client</span> <span class="op">=</span> <span class="fn">instrumentOpenAI</span><span class="op">(</span><span class="kw">new</span> <span class="fn">OpenAI</span><span class="op">(),</span> <span class="op">{</span>
+  <span class="cn">apiUrl</span><span class="op">:</span> <span class="str">"http://localhost:3001"</span><span class="op">,</span>
+  <span class="cn">apiKey</span><span class="op">:</span> <span class="cn">process</span><span class="op">.</span><span class="cn">env</span><span class="op">.</span><span class="cn">LLMLENS_API_KEY</span><span class="op">,</span>
+<span class="op">});</span>
+<span class="cm">// Every call is now captured automatically.</span></pre>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <p class="reveal" style="text-align:center; margin-top: 28px; color: var(--text-muted); font-size: 14px;">
+      Open <code style="font-family:var(--font-mono);color:var(--cyan);background:rgba(34,211,238,0.08);padding:2px 6px;border-radius:4px;">localhost:3000</code> — traces appear the moment you make your first LLM call.
+    </p>
   </div>
 </section>
 
@@ -1113,6 +1451,57 @@
   </div>
 </section>
 
+<!-- ─── USE CASES ─── -->
+<section id="use-cases" class="section">
+  <div class="container">
+    <div class="center reveal">
+      <span class="section-label">Use Cases</span>
+      <h2 class="section-heading">Built for every stage<br>of LLM development.</h2>
+      <p class="section-sub">From first prototype to production debugging — LLM Lens fits the workflow you already have.</p>
+    </div>
+
+    <div class="usecases-grid">
+
+      <article class="usecase-card reveal">
+        <div class="usecase-who">Debugging</div>
+        <div class="feature-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#c084fc" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+          </svg>
+        </div>
+        <h3>Diagnosing broken agent loops</h3>
+        <p>Your agent isn't terminating or is calling the wrong tool. LLM Lens shows every decision in sequence — tool inputs, model reasoning, outputs — so you can pinpoint exactly where the logic breaks.</p>
+        <span class="usecase-tag">tool call inspector</span>
+      </article>
+
+      <article class="usecase-card reveal">
+        <div class="usecase-who">Optimization</div>
+        <div class="feature-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#c084fc" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+          </svg>
+        </div>
+        <h3>Finding expensive prompts before they ship</h3>
+        <p>Track token counts per call, identify bloated system prompts, and compare models side by side — before the billing statement arrives at the end of the month.</p>
+        <span class="usecase-tag">usage stats &amp; latency</span>
+      </article>
+
+      <article class="usecase-card reveal">
+        <div class="usecase-who">Iteration</div>
+        <div class="feature-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#c084fc" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+          </svg>
+        </div>
+        <h3>Understanding what changed in a prompt</h3>
+        <p>You tweaked a prompt and the output improved — but you're not sure why. Compare traces before and after to see exactly what shifted in the model's reasoning.</p>
+        <span class="usecase-tag">chat-style visualization</span>
+      </article>
+
+    </div>
+  </div>
+</section>
+
 <!-- ─── COMING SOON ─── -->
 <section id="roadmap" class="section" style="padding: 80px 0;">
   <div class="container">
@@ -1330,6 +1719,139 @@
   </div>
 </section>
 
+<!-- ─── CONTRIBUTE ─── -->
+<section id="contribute" class="section">
+  <div class="container">
+    <div class="center reveal">
+      <span class="section-label">Contribute</span>
+      <h2 class="section-heading">Built in the open.<br>Contributions welcome.</h2>
+      <p class="section-sub">LLM Lens benefits from outside perspective — whether it's a bug report, a new provider adapter, or feedback on the UI.</p>
+    </div>
+
+    <div class="contribute-grid">
+
+      <a href="https://github.com/wgorzawski/llm-lens/issues" target="_blank" rel="noopener" class="contribute-card reveal">
+        <div class="feature-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#c084fc" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+          </svg>
+        </div>
+        <h3>Report a bug</h3>
+        <p>Something broken or behaving unexpectedly? Open an issue on GitHub. Include the trace ID if you have one and we'll investigate.</p>
+        <span class="contribute-link">
+          github.com/…/issues
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M8.22 2.97a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06l2.97-2.97H3.75a.75.75 0 0 1 0-1.5h7.44L8.22 4.03a.75.75 0 0 1 0-1.06z"/></svg>
+        </span>
+      </a>
+
+      <a href="https://github.com/wgorzawski/llm-lens/discussions" target="_blank" rel="noopener" class="contribute-card reveal">
+        <div class="feature-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#c084fc" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+          </svg>
+        </div>
+        <h3>Request a feature</h3>
+        <p>Missing a provider, a view, or an integration? Start a discussion — the roadmap is shaped by real use cases from real developers.</p>
+        <span class="contribute-link">
+          github.com/…/discussions
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M8.22 2.97a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06l2.97-2.97H3.75a.75.75 0 0 1 0-1.5h7.44L8.22 4.03a.75.75 0 0 1 0-1.06z"/></svg>
+        </span>
+      </a>
+
+      <a href="https://github.com/wgorzawski/llm-lens/pulls" target="_blank" rel="noopener" class="contribute-card reveal">
+        <div class="feature-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#c084fc" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/>
+            <path d="M13 6h3a2 2 0 0 1 2 2v7"/><line x1="6" y1="9" x2="6" y2="21"/>
+          </svg>
+        </div>
+        <h3>Submit a pull request</h3>
+        <p>Adding a new LLM provider? Fixing a UI bug? PRs are welcome — check the contributing guide in the repo to get started quickly.</p>
+        <span class="contribute-link">
+          github.com/…/pulls
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M8.22 2.97a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06l2.97-2.97H3.75a.75.75 0 0 1 0-1.5h7.44L8.22 4.03a.75.75 0 0 1 0-1.06z"/></svg>
+        </span>
+      </a>
+
+    </div>
+  </div>
+</section>
+
+<!-- ─── FAQ ─── -->
+<section id="faq" class="section">
+  <div class="container">
+    <div class="center reveal">
+      <span class="section-label">FAQ</span>
+      <h2 class="section-heading">Common questions.</h2>
+      <p class="section-sub">Everything else is in the README on GitHub.</p>
+    </div>
+
+    <div class="faq-list reveal">
+
+      <div class="faq-item">
+        <button class="faq-q" aria-expanded="false">
+          Does my data leave my machine?
+          <svg class="faq-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <div class="faq-a" role="region">
+          <div class="faq-a-inner">No. LLM Lens stores everything in a local SQLite database on your machine. Your prompts, responses, and API keys never touch an external server.</div>
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <button class="faq-q" aria-expanded="false">
+          Does the instrumentation affect my app's performance?
+          <svg class="faq-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <div class="faq-a" role="region">
+          <div class="faq-a-inner">No. Traces are sent asynchronously, fire-and-forget. If LLM Lens is unreachable or offline, your app continues running with zero impact on response times.</div>
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <button class="faq-q" aria-expanded="false">
+          Can I run it in Docker or a CI environment?
+          <svg class="faq-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <div class="faq-a" role="region">
+          <div class="faq-a-inner">Yes. A Docker Compose setup is included in the repository. Point your instrumented app at the container's API URL and everything works the same way as locally.</div>
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <button class="faq-q" aria-expanded="false">
+          Does it support streaming responses?
+          <svg class="faq-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <div class="faq-a" role="region">
+          <div class="faq-a-inner">Streaming support is on the roadmap. Currently only completed (non-streaming) calls are captured. Streaming instrumentation will assemble the full response before logging it, with no extra latency to your app.</div>
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <button class="faq-q" aria-expanded="false">
+          What Node.js version is required?
+          <svg class="faq-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <div class="faq-a" role="region">
+          <div class="faq-a-inner">Node.js 18 or higher. The project also uses pnpm as the package manager — install it with <code style="font-family:var(--font-mono);font-size:12px;color:var(--cyan);background:rgba(34,211,238,0.08);padding:1px 5px;border-radius:3px;">npm install -g pnpm</code> if you don't have it yet.</div>
+        </div>
+      </div>
+
+      <div class="faq-item">
+        <button class="faq-q" aria-expanded="false">
+          Can I add support for a new LLM provider?
+          <svg class="faq-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <div class="faq-a" role="region">
+          <div class="faq-a-inner">Yes — and it's encouraged. The instrumentation layer is designed to be extensible. Open a PR with a new adapter and a short description of the provider's request/response shape.</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
 <!-- ─── FINAL CTA ─── -->
 <section id="final-cta">
   <div class="container">
@@ -1360,10 +1882,14 @@
     </a>
     <div class="footer-links">
       <a href="https://github.com/wgorzawski/llm-lens" target="_blank" rel="noopener">GitHub</a>
+      <a href="#quickstart">Quick Start</a>
       <a href="#features">Features</a>
+      <a href="#use-cases">Use Cases</a>
       <a href="#how-it-works">How it works</a>
       <a href="#roadmap">Roadmap</a>
       <a href="#pricing">Open Source</a>
+      <a href="#contribute">Contribute</a>
+      <a href="#faq">FAQ</a>
     </div>
     <div class="footer-right">Built with ❤️ for developers</div>
   </div>
@@ -1387,6 +1913,72 @@
       });
     }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
     reveals.forEach(function (el) { observer.observe(el); });
+  }());
+
+  /* ── Nav dropdown ── */
+  (function () {
+    var dropdown = document.getElementById('navMore');
+    var btn = document.getElementById('navMoreBtn');
+    if (!dropdown || !btn) return;
+    btn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var opening = !dropdown.classList.contains('open');
+      dropdown.classList.toggle('open');
+      btn.setAttribute('aria-expanded', opening ? 'true' : 'false');
+    });
+    document.addEventListener('click', function () {
+      dropdown.classList.remove('open');
+      btn.setAttribute('aria-expanded', 'false');
+    });
+    dropdown.querySelectorAll('a').forEach(function (a) {
+      a.addEventListener('click', function () {
+        dropdown.classList.remove('open');
+        btn.setAttribute('aria-expanded', 'false');
+      });
+    });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') {
+        dropdown.classList.remove('open');
+        btn.setAttribute('aria-expanded', 'false');
+      }
+    });
+  }());
+
+  /* ── FAQ accordion ── */
+  (function () {
+    document.querySelectorAll('.faq-q').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var item = btn.closest('.faq-item');
+        var isOpen = item.classList.contains('open');
+        document.querySelectorAll('.faq-item.open').forEach(function (el) {
+          el.classList.remove('open');
+          el.querySelector('.faq-q').setAttribute('aria-expanded', 'false');
+        });
+        if (!isOpen) {
+          item.classList.add('open');
+          btn.setAttribute('aria-expanded', 'true');
+        }
+      });
+    });
+  }());
+
+  /* ── Copy buttons ── */
+  (function () {
+    document.querySelectorAll('.copy-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var pre = btn.closest('.code-block').querySelector('pre');
+        if (!pre) return;
+        navigator.clipboard.writeText(pre.textContent).then(function () {
+          var orig = btn.textContent;
+          btn.textContent = 'Copied!';
+          btn.classList.add('copied');
+          setTimeout(function () {
+            btn.textContent = orig;
+            btn.classList.remove('copied');
+          }, 2000);
+        }).catch(function () {});
+      });
+    });
   }());
 
   /* ── Lightbox ── */
