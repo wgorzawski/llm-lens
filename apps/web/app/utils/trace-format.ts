@@ -61,3 +61,9 @@ export function toolCallCount(t: UnifiedTrace): number {
 export function hasSystem(t: UnifiedTrace): boolean {
   return t.messages.some(m => m.role === "system");
 }
+
+export function traceStatus(t: UnifiedTrace): { ok: boolean; label: string } {
+  if (t.metadata.error) return { ok: false, label: t.metadata.error };
+  const code = t.metadata.statusCode ?? 200;
+  return { ok: code < 400, label: `${code} ${code < 400 ? "OK" : "Error"}` };
+}

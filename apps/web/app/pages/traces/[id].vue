@@ -110,6 +110,7 @@ const timeline = computed(() => {
 
 const rawJsonHtml = computed(() => highlightJson(trace.value ?? {}));
 const rawLineCount = computed(() => JSON.stringify(trace.value, null, 2).split("\n").length);
+const status = computed(() => trace.value ? traceStatus(trace.value) : { ok: true, label: "200 OK" });
 
 // ── sidebar ───────────────────────────────────────────────────────────────────
 const sidebarItems1 = [
@@ -130,6 +131,16 @@ function copyId() {
 }
 function copyJson() {
   if (trace.value) navigator.clipboard?.writeText(JSON.stringify(trace.value, null, 2));
+}
+function downloadJson() {
+  if (!trace.value) return;
+  const blob = new Blob([JSON.stringify(trace.value, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${traceName(trace.value)}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 </script>
 
@@ -225,8 +236,8 @@ function copyJson() {
                 <span style="font-size:11px;color:var(--text-2);font-family:var(--font-mono)">{{ formatDate(trace.timestamp) }}</span>
                 <span style="font-size:11px;color:var(--text-3)">({{ getRelative(trace.timestamp) }})</span>
                 <span style="display:flex;align-items:center;gap:4px;margin-left:8px">
-                  <span class="dot ok" />
-                  <span style="font-size:10px;color:var(--success);font-family:var(--font-mono);text-transform:uppercase;letter-spacing:0.05em">200 ok</span>
+                  <span class="dot" :class="status.ok ? 'ok' : 'err'" />
+                  <span :style="{ fontSize: '10px', color: status.ok ? 'var(--success)' : 'var(--danger)', fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '0.05em' }">{{ status.label }}</span>
                 </span>
               </div>
             </div>
@@ -415,7 +426,7 @@ function copyJson() {
                   </div>
                   <div class="is-row">
                     <span class="k">status</span>
-                    <span class="v"><span class="dot ok" style="margin-right:6px" />200 OK</span>
+                    <span class="v"><span class="dot" :class="status.ok ? 'ok' : 'err'" style="margin-right:6px" />{{ status.label }}</span>
                   </div>
                   <div class="is-row"><span class="k">duration</span><span class="v">{{ fmtMs(trace.metadata.durationMs) }}</span></div>
                 </div>
@@ -509,7 +520,7 @@ function copyJson() {
                     <button class="btn" style="height:24px;padding:0 8px;font-size:11px" @click="copyJson">
                       <AppIcon name="note" :size="11" />Copy
                     </button>
-                    <button class="btn" style="height:24px;padding:0 8px;font-size:11px">
+                    <button class="btn" style="height:24px;padding:0 8px;font-size:11px" @click="downloadJson">
                       <AppIcon name="export" :size="11" />Download
                     </button>
                     <span style="flex:1" />

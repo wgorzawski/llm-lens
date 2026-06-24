@@ -45,6 +45,10 @@ export interface TraceMetadata {
   temperature?: number;
   maxTokens?: number;
   systemPrompt?: string;
+  /** HTTP-style status code of the underlying LLM call, defaults to 200 when absent */
+  statusCode?: number;
+  /** Error message if the LLM call failed */
+  error?: string;
 }
 
 export interface UnifiedTrace {
