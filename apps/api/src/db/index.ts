@@ -43,10 +43,11 @@ export async function initDb(): Promise<void> {
     )
   `);
 
-  try {
-    await client.execute(`ALTER TABLE traces ADD COLUMN user_id TEXT NOT NULL DEFAULT ''`);
-  } catch {
-    // column already exists
+  for (const col of [
+    `ALTER TABLE traces ADD COLUMN user_id TEXT NOT NULL DEFAULT ''`,
+    `ALTER TABLE traces ADD COLUMN status TEXT NOT NULL DEFAULT 'ok'`,
+  ]) {
+    try { await client.execute(col); } catch { /* already exists */ }
   }
 
   await client.execute(
@@ -57,6 +58,9 @@ export async function initDb(): Promise<void> {
   );
   await client.execute(
     `CREATE INDEX IF NOT EXISTS idx_traces_timestamp ON traces (timestamp DESC)`
+  );
+  await client.execute(
+    `CREATE INDEX IF NOT EXISTS idx_traces_status ON traces (status)`
   );
 
   await client.execute(`

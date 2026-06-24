@@ -2,7 +2,6 @@
 import type { UnifiedTrace, TraceProvider } from "@llm-lens/types";
 
 definePageMeta({ layout: false });
-useHead({ htmlAttrs: { "data-theme": "dark" } });
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -12,6 +11,19 @@ function getSnippet(t: UnifiedTrace): string {
   if (typeof first.content === "string") return first.content.slice(0, 140);
   const block = (first.content as Array<{ type: string; text?: string }>).find(b => b.type === "text");
   return block?.text?.slice(0, 140) ?? "";
+}
+
+const RANGE_MS: Record<string, number> = {
+  "15m": 15 * 60 * 1000,
+  "1h": 60 * 60 * 1000,
+  "24h": 24 * 60 * 60 * 1000,
+  "7d": 7 * 24 * 60 * 60 * 1000,
+  "30d": 30 * 24 * 60 * 60 * 1000,
+};
+
+function rangeToFrom(range: string): string | undefined {
+  const ms = RANGE_MS[range];
+  return ms ? new Date(Date.now() - ms).toISOString() : undefined;
 }
 
 // ── auth ──────────────────────────────────────────────────────────────────────
@@ -43,9 +55,7 @@ const filterRange = ref("24h");
 const sort = ref("recent");
 const selected = ref<Set<string>>(new Set());
 const showTip = ref(true);
-const theme = ref<"dark" | "light">("dark");
-
-watch(theme, v => { document.documentElement.setAttribute("data-theme", v); });
+const { theme } = useAppearance();
 
 const escHandler = (e: KeyboardEvent) => { if (e.key === "Escape") selected.value = new Set(); };
 onMounted(() => window.addEventListener("keydown", escHandler));
@@ -55,11 +65,19 @@ onUnmounted(() => window.removeEventListener("keydown", escHandler));
 
 const { page, pending, error, fetchTraces } = useTraces({
   get provider() { return filterProvider.value === "all" ? undefined : filterProvider.value; },
+  get model() { return filterModel.value === "all" ? undefined : filterModel.value; },
+  get status() { return filterStatus.value === "all" ? undefined : filterStatus.value; },
+  get latency() { return filterLatency.value === "any" ? undefined : filterLatency.value; },
+  get from() { return rangeToFrom(filterRange.value); },
   get sort() { return sort.value; },
 });
 
 await fetchTraces();
 watch(filterProvider, () => fetchTraces(0));
+watch(filterModel, () => fetchTraces(0));
+watch(filterStatus, () => fetchTraces(0));
+watch(filterLatency, () => fetchTraces(0));
+watch(filterRange, () => fetchTraces(0));
 watch(sort, () => fetchTraces(0));
 
 // ── computed ──────────────────────────────────────────────────────────────────

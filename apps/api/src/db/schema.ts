@@ -18,6 +18,7 @@ export const traces = sqliteTable("traces", {
   timestamp: text("timestamp").notNull(),
   provider: text("provider").notNull(),
   model: text("model").notNull(),
+  status: text("status").notNull().default("ok"),
   messages: text("messages").notNull(),
   usage: text("usage").notNull(),
   metadata: text("metadata").notNull(),

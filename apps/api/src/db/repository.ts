@@ -1,13 +1,19 @@
-import { eq, desc, count, and, sql } from "drizzle-orm";
+import { eq, gte, desc, count, and, sql } from "drizzle-orm";
 import { db, traces } from "./index.js";
 import type { UnifiedTrace, TraceProvider } from "@llm-lens/types";
 
 export type TraceSort = "recent" | "latency" | "cost" | "tokens";
+export type TraceStatus = "ok" | "warn" | "err";
+export type LatencyBucket = "fast" | "med" | "slow" | "verySlow";
 
 export interface ListOptions {
   limit?: number;
   offset?: number;
   provider?: TraceProvider;
+  model?: string;
+  status?: TraceStatus;
+  latency?: LatencyBucket;
+  from?: string;
   sort?: TraceSort;
   userId: string;
 }
@@ -18,6 +24,24 @@ function sortOrder(sort: TraceSort | undefined) {
     case "cost": return desc(sql`json_extract(${traces.metadata}, '$.costUsd')`);
     case "tokens": return desc(sql`json_extract(${traces.usage}, '$.inputTokens') + json_extract(${traces.usage}, '$.outputTokens')`);
     default: return desc(traces.timestamp);
+  }
+}
+
+function deriveStatus(metadata: UnifiedTrace["metadata"]): TraceStatus {
+  if (metadata.error || (metadata.statusCode && metadata.statusCode >= 400)) return "err";
+  if ((metadata.durationMs ?? 0) >= 1500) return "warn";
+  return "ok";
+}
+
+const durationExpr = sql`json_extract(${traces.metadata}, '$.durationMs')`;
+
+function latencyCondition(bucket: LatencyBucket | undefined) {
+  switch (bucket) {
+    case "fast": return sql`${durationExpr} < 500`;
+    case "med": return sql`${durationExpr} >= 500 AND ${durationExpr} < 1500`;
+    case "slow": return sql`${durationExpr} >= 1500 AND ${durationExpr} < 5000`;
+    case "verySlow": return sql`${durationExpr} >= 5000`;
+    default: return undefined;
   }
 }
 
@@ -46,6 +70,7 @@ export async function insertTrace(trace: UnifiedTrace, userId: string): Promise<
     timestamp: trace.timestamp,
     provider: trace.metadata.provider,
     model: trace.metadata.model,
+    status: deriveStatus(trace.metadata),
     messages: JSON.stringify(trace.messages),
     usage: JSON.stringify(trace.usage),
     metadata: JSON.stringify(trace.metadata),
@@ -61,6 +86,10 @@ export async function listTraces(opts: ListOptions): Promise<ListResult> {
   const where = and(
     eq(traces.userId, opts.userId),
     opts.provider ? eq(traces.provider, opts.provider) : undefined,
+    opts.model ? eq(traces.model, opts.model) : undefined,
+    opts.status ? eq(traces.status, opts.status) : undefined,
+    latencyCondition(opts.latency),
+    opts.from ? gte(traces.timestamp, opts.from) : undefined,
   );
 
   const [rows, [{ value: total }]] = await Promise.all([

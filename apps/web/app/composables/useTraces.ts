@@ -7,7 +7,15 @@ export interface TracesPage {
   offset: number;
 }
 
-export function useTraces(opts?: { provider?: TraceProvider; sort?: string; limit?: number }) {
+export function useTraces(opts?: {
+  provider?: TraceProvider;
+  model?: string;
+  status?: string;
+  latency?: string;
+  from?: string;
+  sort?: string;
+  limit?: number;
+}) {
   const config = useRuntimeConfig();
   const apiBase = config.public.apiBase as string;
 
@@ -24,6 +32,10 @@ export function useTraces(opts?: { provider?: TraceProvider; sort?: string; limi
       offset: String(offset),
     });
     if (opts?.provider) params.set("provider", opts.provider);
+    if (opts?.model) params.set("model", opts.model);
+    if (opts?.status) params.set("status", opts.status);
+    if (opts?.latency) params.set("latency", opts.latency);
+    if (opts?.from) params.set("from", opts.from);
     if (opts?.sort) params.set("sort", opts.sort);
     try {
       const data = await $fetch<TracesPage>(`${apiBase}/traces?${params}`, {

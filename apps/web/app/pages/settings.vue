@@ -1,6 +1,5 @@
 <script setup lang="ts">
 definePageMeta({ layout: false });
-useHead({ htmlAttrs: { "data-theme": "dark" } });
 
 const { logout, token } = useAuth();
 const { me, fetchMe } = useMe();
@@ -81,9 +80,7 @@ const notifs = reactive({
 });
 
 // appearance
-const appTheme = ref<"dark" | "light">("dark");
-const appAccent = ref("#5b8dff");
-const appDensity = ref<"compact" | "dense" | "loose">("dense");
+const { theme: appTheme, accent: appAccent, density: appDensity } = useAppearance();
 const appLigatures = ref(true);
 const appShowKbd = ref(true);
 const appVimNav = ref(false);

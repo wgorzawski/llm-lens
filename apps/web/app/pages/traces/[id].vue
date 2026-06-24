@@ -3,7 +3,6 @@ import type { TraceMessage, ToolCall, ToolResult } from "@llm-lens/types";
 import { highlightJson } from "~/utils/json-highlight";
 
 definePageMeta({ layout: false });
-useHead({ htmlAttrs: { "data-theme": "dark" } });
 
 // ── route + data ──────────────────────────────────────────────────────────────
 const route = useRoute();
@@ -25,8 +24,7 @@ const userName = computed<string>(() => {
 
 // ── ui state ──────────────────────────────────────────────────────────────────
 const inspectorTab = ref<"inspector" | "timeline" | "raw" | "notes">("inspector");
-const theme = ref<"dark" | "light">("dark");
-watch(theme, v => document.documentElement.setAttribute("data-theme", v));
+const { theme } = useAppearance();
 
 // ── message normalization ─────────────────────────────────────────────────────
 type RenderBlock =
