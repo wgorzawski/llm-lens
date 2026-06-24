@@ -8,7 +8,7 @@ import { initDb } from "./db/index.js";
 import { TracesController } from "./controllers/traces.controller.js";
 import { AuthController } from "./controllers/auth.controller.js";
 import { ApiKeysController } from "./controllers/api-keys.controller.js";
-import { findOrCreateOAuthUser } from "./db/users.repository.js";
+import { findOrCreateOAuthUser, findUserById } from "./db/users.repository.js";
 import { hashKey, findApiKeyByHash, touchApiKey } from "./db/api-keys.repository.js";
 
 declare module "fastify" {
@@ -88,6 +88,12 @@ await server.register(bootstrap, {
 });
 
 server.get("/health", async () => ({ status: "ok" }));
+
+server.get("/api/me", async (request, reply) => {
+  const user = await findUserById(request.user.userId);
+  if (!user) return reply.status(404).send({ error: "User not found" });
+  return { id: user.id, email: user.email, org: user.org, plan: user.plan };
+});
 
 server.get("/api/auth/google/callback", async (request, reply) => {
   const tokenSet = await server.googleOAuth2.getAccessTokenFromAuthorizationCodeFlow(request, reply);

@@ -3,6 +3,8 @@ definePageMeta({ layout: false });
 useHead({ htmlAttrs: { "data-theme": "dark" } });
 
 const { logout, token } = useAuth();
+const { me, fetchMe } = useMe();
+if (!me.value) await fetchMe();
 const userName = computed<string>(() => {
   if (!token.value) return "user";
   try {
@@ -174,7 +176,7 @@ const accentColors = [
           <div class="sb-avatar">{{ userName[0]?.toUpperCase() }}</div>
           <div style="display:flex;flex-direction:column;line-height:1.2;flex:1;min-width:0">
             <span class="sb-user-name">{{ userName }}</span>
-            <span class="sb-user-org">personal · free</span>
+            <span class="sb-user-org">{{ me?.org ?? "personal" }} · {{ me?.plan ?? "free" }}</span>
           </div>
           <AppIcon name="logout" :size="12" style="color:var(--text-3)" />
         </div>

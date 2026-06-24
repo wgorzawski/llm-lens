@@ -22,6 +22,8 @@ export async function initDb(): Promise<void> {
   for (const col of [
     `ALTER TABLE users ADD COLUMN provider TEXT NOT NULL DEFAULT 'email'`,
     `ALTER TABLE users ADD COLUMN provider_id TEXT`,
+    `ALTER TABLE users ADD COLUMN org TEXT NOT NULL DEFAULT 'personal'`,
+    `ALTER TABLE users ADD COLUMN plan TEXT NOT NULL DEFAULT 'free'`,
   ]) {
     try { await client.execute(col); } catch { /* already exists */ }
   }

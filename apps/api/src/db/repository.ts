@@ -1,12 +1,24 @@
-import { eq, desc, count, and } from "drizzle-orm";
+import { eq, desc, count, and, sql } from "drizzle-orm";
 import { db, traces } from "./index.js";
 import type { UnifiedTrace, TraceProvider } from "@llm-lens/types";
+
+export type TraceSort = "recent" | "latency" | "cost" | "tokens";
 
 export interface ListOptions {
   limit?: number;
   offset?: number;
   provider?: TraceProvider;
+  sort?: TraceSort;
   userId: string;
+}
+
+function sortOrder(sort: TraceSort | undefined) {
+  switch (sort) {
+    case "latency": return desc(sql`json_extract(${traces.metadata}, '$.durationMs')`);
+    case "cost": return desc(sql`json_extract(${traces.metadata}, '$.costUsd')`);
+    case "tokens": return desc(sql`json_extract(${traces.usage}, '$.inputTokens') + json_extract(${traces.usage}, '$.outputTokens')`);
+    default: return desc(traces.timestamp);
+  }
 }
 
 export interface ListResult {
@@ -52,7 +64,7 @@ export async function listTraces(opts: ListOptions): Promise<ListResult> {
   );
 
   const [rows, [{ value: total }]] = await Promise.all([
-    db.select().from(traces).where(where).orderBy(desc(traces.timestamp)).limit(limit).offset(offset),
+    db.select().from(traces).where(where).orderBy(sortOrder(opts.sort)).limit(limit).offset(offset),
     db.select({ value: count() }).from(traces).where(where),
   ]);
 

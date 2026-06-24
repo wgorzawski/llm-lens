@@ -7,7 +7,7 @@ export interface TracesPage {
   offset: number;
 }
 
-export function useTraces(opts?: { provider?: TraceProvider; limit?: number }) {
+export function useTraces(opts?: { provider?: TraceProvider; sort?: string; limit?: number }) {
   const config = useRuntimeConfig();
   const apiBase = config.public.apiBase as string;
 
@@ -24,6 +24,7 @@ export function useTraces(opts?: { provider?: TraceProvider; limit?: number }) {
       offset: String(offset),
     });
     if (opts?.provider) params.set("provider", opts.provider);
+    if (opts?.sort) params.set("sort", opts.sort);
     try {
       const data = await $fetch<TracesPage>(`${apiBase}/traces?${params}`, {
         headers: token.value ? { Authorization: `Bearer ${token.value}` } : {},

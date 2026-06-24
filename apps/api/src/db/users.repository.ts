@@ -12,6 +12,11 @@ export async function findUserByEmail(email: string) {
   return rows[0] ?? null;
 }
 
+export async function findUserById(id: string) {
+  const rows = await db.select().from(users).where(eq(users.id, id)).limit(1);
+  return rows[0] ?? null;
+}
+
 export async function findOrCreateOAuthUser(email: string, provider: string, providerId: string) {
   const existing = await findUserByEmail(email);
   if (existing) return { id: existing.id, email: existing.email };

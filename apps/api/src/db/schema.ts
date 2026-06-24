@@ -7,6 +7,8 @@ export const users = sqliteTable("users", {
   passwordHash: text("password_hash").notNull().default(""),
   provider: text("provider").notNull().default("email"),
   providerId: text("provider_id"),
+  org: text("org").notNull().default("personal"),
+  plan: text("plan").notNull().default("free"),
   createdAt: integer("created_at").notNull().default(sql`(unixepoch('now') * 1000)`),
 });
 

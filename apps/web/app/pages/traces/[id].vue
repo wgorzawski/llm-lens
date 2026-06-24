@@ -13,6 +13,8 @@ await fetchTrace();
 
 // ── auth ──────────────────────────────────────────────────────────────────────
 const { logout, token } = useAuth();
+const { me, fetchMe } = useMe();
+if (!me.value) await fetchMe();
 const userName = computed<string>(() => {
   if (!token.value) return "user";
   try {
@@ -37,9 +39,14 @@ interface NormalizedMsg {
   role: TraceMessage["role"];
   blocks: RenderBlock[];
   isToolResult: boolean;
+  tMs: number;
 }
 
-function normalizeMsg(msg: TraceMessage, idx: number): NormalizedMsg {
+function fmtT(ms: number): string {
+  return ms >= 1000 ? (ms / 1000).toFixed(2) + "s" : ms + "ms";
+}
+
+function normalizeMsg(msg: TraceMessage, idx: number, count: number, totalMs: number): NormalizedMsg {
   const blocks: RenderBlock[] = [];
   if (typeof msg.content === "string") {
     if (msg.content) blocks.push({ type: "text", text: msg.content });
@@ -54,12 +61,15 @@ function normalizeMsg(msg: TraceMessage, idx: number): NormalizedMsg {
   if (msg.toolResults) for (const tr of msg.toolResults) blocks.push({ type: "tool_result", toolResult: tr });
 
   const isToolResult = msg.role === "user" && blocks.length > 0 && blocks.every(b => b.type === "tool_result");
-  return { id: `msg-${idx}`, role: msg.role, blocks, isToolResult };
+  const tMs = count > 1 ? Math.round((idx / (count - 1)) * totalMs) : 0;
+  return { id: `msg-${idx}`, role: msg.role, blocks, isToolResult, tMs };
 }
 
-const normalizedMessages = computed<NormalizedMsg[]>(() =>
-  trace.value?.messages.map((m, i) => normalizeMsg(m, i)) ?? []
-);
+const normalizedMessages = computed<NormalizedMsg[]>(() => {
+  const msgs = trace.value?.messages ?? [];
+  const totalMs = trace.value?.metadata.durationMs ?? 0;
+  return msgs.map((m, i) => normalizeMsg(m, i, msgs.length, totalMs));
+});
 const systemMessages = computed(() => normalizedMessages.value.filter(m => m.role === "system"));
 const conversationMessages = computed(() => normalizedMessages.value.filter(m => m.role !== "system"));
 
@@ -178,7 +188,7 @@ function downloadJson() {
           <div class="sb-avatar">{{ userName[0]?.toUpperCase() }}</div>
           <div style="display:flex;flex-direction:column;line-height:1.2;flex:1;min-width:0">
             <span class="sb-user-name">{{ userName }}</span>
-            <span class="sb-user-org">personal · free</span>
+            <span class="sb-user-org">{{ me?.org ?? "personal" }} · {{ me?.plan ?? "free" }}</span>
           </div>
           <AppIcon name="logout" :size="12" style="color:var(--text-3)" />
         </div>
@@ -322,7 +332,7 @@ function downloadJson() {
                     </div>
                   </div>
                   <div class="msg-meta-col">
-                    <span class="t">T+0ms</span>
+                    <span class="t">T+{{ fmtT(msg.tMs) }}</span>
                     <span class="d">{{ msg.id }}</span>
                   </div>
                 </div>
@@ -382,6 +392,7 @@ function downloadJson() {
                 </div>
 
                 <div class="msg-meta-col">
+                  <span class="t">T+{{ fmtT(msg.tMs) }}</span>
                   <span class="d">{{ msg.id }}</span>
                 </div>
               </div>
