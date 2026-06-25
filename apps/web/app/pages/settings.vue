@@ -1,29 +1,12 @@
 <script setup lang="ts">
-definePageMeta({ layout: false });
+import type { MemberRole, OrgMember } from "~/composables/useOrgMembers";
+import type { TotpSetup } from "~/composables/useTwoFactor";
 
-const { logout, token } = useAuth();
-const { me, fetchMe } = useMe();
+definePageMeta({ layout: "app" });
+
+const { token } = useAuth();
+const { me, fetchMe, updateProfile, updatePassword, updatePreferences } = useMe();
 if (!me.value) await fetchMe();
-const userName = computed<string>(() => {
-  if (!token.value) return "user";
-  try {
-    const payload = JSON.parse(atob(token.value.split(".")[1]!));
-    return (payload.email as string).split("@")[0] ?? "user";
-  } catch { return "user"; }
-});
-
-const sidebarItems1 = [
-  { id: "traces",    label: "Traces",         icon: "activity",  route: "/" },
-  { id: "dashboard", label: "Dashboard",      icon: "dashboard" },
-  { id: "compare",   label: "Compare & diff", icon: "diff" },
-  { id: "replays",   label: "Replays",        icon: "replay" },
-];
-const sidebarItems2 = [
-  { id: "keys",       label: "API keys",        icon: "key" },
-  { id: "instrument", label: "Instrumentation", icon: "tool" },
-  { id: "docs",       label: "Docs",            icon: "docs" },
-  { id: "settings",   label: "Settings",        icon: "settings", route: "/settings" },
-];
 
 // settings sub-nav
 const navSection = ref("profile");
@@ -56,28 +39,185 @@ const navGroups = [
 ];
 
 // profile
-const displayName = ref("Wojtek Górzawski");
-const handle = ref("wgorzawski");
-const tz = ref("Europe/Warsaw");
-const locale = ref("en-US");
-const dateFormat = ref("iso");
+const displayName = ref(me.value?.displayName || "");
+const handle = ref(me.value?.handle || "");
+const tz = ref(me.value?.timezone || "UTC");
+const locale = ref(me.value?.locale || "en-US");
+const dateFormat = ref(me.value?.dateFormat || "iso");
+
+const savingProfile = ref(false);
+const profileError = ref<string | null>(null);
+const profileSaved = ref(false);
+
+async function saveProfile() {
+  savingProfile.value = true;
+  profileError.value = null;
+  profileSaved.value = false;
+  try {
+    await updateProfile({
+      displayName: displayName.value,
+      handle: handle.value,
+      timezone: tz.value,
+      locale: locale.value,
+      dateFormat: dateFormat.value,
+    });
+    profileSaved.value = true;
+    setTimeout(() => (profileSaved.value = false), 2000);
+  } catch (err) {
+    profileError.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    savingProfile.value = false;
+  }
+}
 
 // account
-const twoFA = ref(true);
+const { setup: setupTwoFactor, verify: verifyTwoFactor, disable: disableTwoFactor, regenerateRecoveryCodes } = useTwoFactor();
+const twoFA = computed(() => me.value?.totpEnabled ?? false);
 const signinAlerts = ref(true);
 
+const totpSetup = ref<TotpSetup | null>(null);
+const totpVerifyCode = ref("");
+const totpError = ref<string | null>(null);
+const totpBusy = ref(false);
+const revealedRecoveryCodes = ref<string[] | null>(null);
+const disableCode = ref("");
+const showDisableForm = ref(false);
+
+async function startTwoFactorSetup() {
+  totpError.value = null;
+  totpBusy.value = true;
+  try {
+    totpSetup.value = await setupTwoFactor();
+  } catch (err) {
+    totpError.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    totpBusy.value = false;
+  }
+}
+
+async function confirmTwoFactorSetup() {
+  totpError.value = null;
+  totpBusy.value = true;
+  try {
+    const { recoveryCodes } = await verifyTwoFactor(totpVerifyCode.value);
+    revealedRecoveryCodes.value = recoveryCodes;
+    totpSetup.value = null;
+    totpVerifyCode.value = "";
+    await fetchMe();
+  } catch (err) {
+    totpError.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    totpBusy.value = false;
+  }
+}
+
+async function confirmDisableTwoFactor() {
+  totpError.value = null;
+  totpBusy.value = true;
+  try {
+    await disableTwoFactor(disableCode.value);
+    disableCode.value = "";
+    showDisableForm.value = false;
+    await fetchMe();
+  } catch (err) {
+    totpError.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    totpBusy.value = false;
+  }
+}
+
+async function regenerateCodes() {
+  const code = window.prompt("Enter your current authenticator code to regenerate recovery codes:");
+  if (!code) return;
+  totpError.value = null;
+  try {
+    const { recoveryCodes } = await regenerateRecoveryCodes(code);
+    revealedRecoveryCodes.value = recoveryCodes;
+  } catch (err) {
+    totpError.value = err instanceof Error ? err.message : String(err);
+  }
+}
+
+const currentPasswordInput = ref("");
+const newPasswordInput = ref("");
+const confirmPasswordInput = ref("");
+const savingPassword = ref(false);
+const passwordError = ref<string | null>(null);
+const passwordSaved = ref(false);
+
+async function changePassword() {
+  passwordError.value = null;
+  passwordSaved.value = false;
+  if (newPasswordInput.value !== confirmPasswordInput.value) {
+    passwordError.value = "Passwords do not match";
+    return;
+  }
+  savingPassword.value = true;
+  try {
+    await updatePassword(currentPasswordInput.value, newPasswordInput.value);
+    currentPasswordInput.value = "";
+    newPasswordInput.value = "";
+    confirmPasswordInput.value = "";
+    passwordSaved.value = true;
+    setTimeout(() => (passwordSaved.value = false), 2000);
+  } catch (err) {
+    passwordError.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    savingPassword.value = false;
+  }
+}
+
 // notifications
+const savedNotifs = (me.value?.preferences?.notifications as Record<string, boolean>) || {};
 const notifs = reactive({
-  digestDaily: true,
-  digestWeekly: false,
-  alertErr: true,
-  alertLatency: true,
-  alertCost: true,
-  alertReplays: false,
-  inAppMentions: true,
-  inAppAssignments: true,
-  slack: true,
+  digestDaily: savedNotifs.digestDaily ?? true,
+  digestWeekly: savedNotifs.digestWeekly ?? false,
+  alertErr: savedNotifs.alertErr ?? true,
+  alertLatency: savedNotifs.alertLatency ?? true,
+  alertCost: savedNotifs.alertCost ?? true,
+  alertReplays: savedNotifs.alertReplays ?? false,
+  inAppMentions: savedNotifs.inAppMentions ?? true,
+  inAppAssignments: savedNotifs.inAppAssignments ?? true,
 });
+
+async function toggleNotif(key: keyof typeof notifs) {
+  notifs[key] = !notifs[key];
+  await updatePreferences({ notifications: { ...notifs } });
+}
+
+const slackWebhookUrl = ref((me.value?.preferences?.slackWebhookUrl as string) || "");
+const slackConnected = computed(() => !!slackWebhookUrl.value);
+const slackSaving = ref(false);
+const slackTestResult = ref<string | null>(null);
+
+async function saveSlackWebhook() {
+  slackSaving.value = true;
+  slackTestResult.value = null;
+  try {
+    await updatePreferences({ slackWebhookUrl: slackWebhookUrl.value });
+  } finally {
+    slackSaving.value = false;
+  }
+}
+
+async function disconnectSlack() {
+  slackWebhookUrl.value = "";
+  await updatePreferences({ slackWebhookUrl: "" });
+}
+
+async function testSlack() {
+  slackTestResult.value = null;
+  try {
+    const res = await fetch(slackWebhookUrl.value, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: "LLM Lens test alert — your Slack integration is working." }),
+    });
+    slackTestResult.value = res.ok ? "Test message sent." : `Slack responded with ${res.status}`;
+  } catch (err) {
+    slackTestResult.value = err instanceof Error ? err.message : String(err);
+  }
+}
 
 // appearance
 const { theme: appTheme, accent: appAccent, density: appDensity } = useAppearance();
@@ -86,28 +226,148 @@ const appShowKbd = ref(true);
 const appVimNav = ref(false);
 
 // data
-const retention = ref(7);
 const maskPII = ref(true);
 const shareData = ref(false);
 
 // org
-const orgName = ref("Yumio");
-const orgSlug = ref("yumio");
-const orgDefaultEnv = ref("production");
+const { org, fetchOrg, updateOrg } = useOrg();
+await fetchOrg();
+const orgName = ref(org.value?.name ?? "");
+const orgSlug = ref(org.value?.slug ?? "");
+const orgDefaultEnv = ref(org.value?.defaultEnv ?? "production");
 
-const members = [
-  { name: "Wojtek Górzawski", email: "wojtek@example.com", role: "Owner",  added: "2025-08-04", last: "now" },
-  { name: "Maria Lewicka",    email: "maria@yumio.fun",    role: "Admin",  added: "2025-09-12", last: "12 min ago" },
-  { name: "Piotr Kowal",      email: "piotr@yumio.fun",    role: "Member", added: "2025-11-03", last: "2 hours ago" },
-  { name: "Anna Nowak",       email: "anna@yumio.fun",     role: "Viewer", added: "2026-02-18", last: "yesterday" },
-  { name: "(invite pending)", email: "kuba@yumio.fun",     role: "Member", added: "2026-05-22", last: "—", pending: true },
-];
+const retention = ref(org.value?.retentionDays ?? 7);
+const savingRetention = ref(false);
+async function setRetention(days: number) {
+  savingRetention.value = true;
+  try {
+    const updated = await updateOrg({ retentionDays: days });
+    retention.value = updated.retentionDays;
+  } finally {
+    savingRetention.value = false;
+  }
+}
 
-const sessions = [
-  { device: "MacBook Pro 16″ · macOS 15", location: "Warsaw, PL · 84.10.•••.•••", agent: "Chrome 132 · Geist", time: "now", current: true },
-  { device: "iPhone 17 Pro",              location: "Warsaw, PL · 84.10.•••.•••", agent: "Safari Mobile · iOS 19", time: "2 hours ago" },
-  { device: "Linux server · CI runner",   location: "Frankfurt, DE · 18.157.•••.•••", agent: "llmlens-sdk/0.8.2 · node 22", time: "14 minutes ago", ci: true },
-];
+const savingOrg = ref(false);
+const orgError = ref<string | null>(null);
+const orgSaved = ref(false);
+
+async function saveOrg() {
+  savingOrg.value = true;
+  orgError.value = null;
+  orgSaved.value = false;
+  try {
+    const updated = await updateOrg({ name: orgName.value, slug: orgSlug.value, defaultEnv: orgDefaultEnv.value });
+    orgSlug.value = updated.slug;
+    orgSaved.value = true;
+    setTimeout(() => (orgSaved.value = false), 2000);
+  } catch (err) {
+    orgError.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    savingOrg.value = false;
+  }
+}
+
+const { members, fetchMembers, inviteMember, updateRole, removeMember } = useOrgMembers();
+await fetchMembers();
+const myRole = computed(() => members.value.find((m) => m.email === me.value?.email)?.role ?? "owner");
+
+const memberRoles: MemberRole[] = ["admin", "member", "viewer"];
+const inviteEmail = ref("");
+const inviteRole = ref<MemberRole>("member");
+const inviting = ref(false);
+const inviteError = ref<string | null>(null);
+const lastInviteUrl = ref<string | null>(null);
+
+async function submitInvite() {
+  if (!inviteEmail.value.trim()) return;
+  inviting.value = true;
+  inviteError.value = null;
+  try {
+    const result = await inviteMember(inviteEmail.value.trim(), inviteRole.value);
+    lastInviteUrl.value = result.inviteUrl;
+    inviteEmail.value = "";
+  } catch (err) {
+    inviteError.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    inviting.value = false;
+  }
+}
+
+async function copyInviteLink() {
+  if (!lastInviteUrl.value) return;
+  await navigator.clipboard.writeText(lastInviteUrl.value);
+}
+
+function memberActions(m: OrgMember) {
+  if (m.status === "pending") {
+    return [
+      { id: "copy", label: "Copy invite link", icon: "note" },
+      { id: "remove", label: "Revoke invite", icon: "trash", danger: true },
+    ];
+  }
+  return [
+    ...memberRoles
+      .filter((r) => r !== m.role)
+      .map((r) => ({ id: `role:${r}`, label: `Make ${r}`, icon: "shield" })),
+    { id: "remove", label: "Remove member", icon: "trash", danger: true },
+  ];
+}
+
+async function onMemberAction(m: OrgMember, actionId: string) {
+  if (actionId === "copy") {
+    const frontendUrl = window.location.origin;
+    await navigator.clipboard.writeText(`${frontendUrl}/invite/${m.inviteToken}`);
+    return;
+  }
+  if (actionId === "remove") {
+    await removeMember(m.id);
+    return;
+  }
+  if (actionId.startsWith("role:")) {
+    await updateRole(m.id, actionId.slice("role:".length) as MemberRole);
+  }
+}
+
+const { sessions, fetchSessions, revoke: revokeSession } = useSessions();
+await fetchSessions();
+
+function relativeTime(iso: string): string {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const mins = Math.round(diffMs / 60000);
+  if (mins < 1) return "now";
+  if (mins < 60) return `${mins} min ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  const days = Math.round(hours / 24);
+  return `${days} day${days === 1 ? "" : "s"} ago`;
+}
+
+async function downloadTracesExport() {
+  const res = await fetch(`${useRuntimeConfig().public.apiBase}/export/traces`, {
+    headers: { Authorization: `Bearer ${token.value}` },
+  });
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "traces.jsonl.gz";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+async function downloadUsageExport() {
+  const res = await fetch(`${useRuntimeConfig().public.apiBase}/export/usage`, {
+    headers: { Authorization: `Bearer ${token.value}` },
+  });
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "usage.csv";
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 const usageBars = [
   { label: "Traces",  value: 32480, max: 50000, unit: "" },
@@ -134,58 +394,9 @@ const accentColors = [
 </script>
 
 <template>
-  <div class="app">
-
-    <!-- ══════════════════════ SIDEBAR ══════════════════════ -->
-    <aside class="sidebar">
-      <div class="sb-brand">
-        <div class="sb-logo"><AppIcon name="logo" :size="14" /></div>
-        <div class="sb-name">LLM Lens</div>
-        <div class="sb-env">prod</div>
-      </div>
-
-      <div class="sb-section">
-        <div class="sb-section-label">Observe</div>
-        <div v-for="it in sidebarItems1" :key="it.id"
-          class="sb-item"
-          @click="it.route ? navigateTo(it.route) : undefined"
-        >
-          <AppIcon :name="it.icon" :size="14" />
-          <span>{{ it.label }}</span>
-        </div>
-      </div>
-
-      <div class="sb-section">
-        <div class="sb-section-label">Configure</div>
-        <div v-for="it in sidebarItems2" :key="it.id"
-          class="sb-item" :class="{ active: it.id === 'settings' }"
-          @click="it.route ? navigateTo(it.route) : undefined"
-        >
-          <AppIcon :name="it.icon" :size="14" />
-          <span>{{ it.label }}</span>
-        </div>
-      </div>
-
-      <div class="sb-spacer" />
-
-      <div class="sb-footer">
-        <div class="sb-user" @click="logout()">
-          <div class="sb-avatar">{{ userName[0]?.toUpperCase() }}</div>
-          <div style="display:flex;flex-direction:column;line-height:1.2;flex:1;min-width:0">
-            <span class="sb-user-name">{{ userName }}</span>
-            <span class="sb-user-org">{{ me?.org ?? "personal" }} · {{ me?.plan ?? "free" }}</span>
-          </div>
-          <AppIcon name="logout" :size="12" style="color:var(--text-3)" />
-        </div>
-      </div>
-    </aside>
-
-    <!-- ══════════════════════ MAIN COLUMN ══════════════════════ -->
-    <div class="main-col">
-
       <div class="topbar">
         <div class="crumbs">
-          <NuxtLink to="/" class="crumb-home">{{ userName }}</NuxtLink>
+          <NuxtLink to="/" class="crumb-link">Traces</NuxtLink>
           <span class="crumb-sep">/</span>
           <span class="crumb-cur">Settings</span>
         </div>
@@ -261,7 +472,7 @@ const accentColors = [
                   </div>
                   <div class="set-row-control">
                     <div class="field-input">
-                      <input value="wojtek@example.com" readonly class="mono" />
+                      <input :value="me?.email" readonly class="mono" />
                       <span class="trail"><button class="link-btn">Change</button></span>
                     </div>
                   </div>
@@ -273,7 +484,7 @@ const accentColors = [
                     <div class="set-row-hint">Set by your organization owner.</div>
                   </div>
                   <div class="set-row-control">
-                    <div class="static-val mono">Owner</div>
+                    <div class="static-val mono">{{ myRole }}</div>
                   </div>
                 </div>
               </div>
@@ -326,6 +537,11 @@ const accentColors = [
                   </div>
                 </div>
               </div>
+              <div class="set-row-actions">
+                <span v-if="profileError" class="set-error">{{ profileError }}</span>
+                <span v-else-if="profileSaved" class="set-saved">Saved</span>
+                <button class="s-btn primary" :disabled="savingProfile" @click="saveProfile">{{ savingProfile ? "Saving…" : "Save changes" }}</button>
+              </div>
             </section>
           </template>
 
@@ -339,21 +555,23 @@ const accentColors = [
               <div class="set-section-body">
                 <div class="set-row">
                   <div class="set-row-label"><div class="set-row-label-text">Current password</div></div>
-                  <div class="set-row-control"><div class="field-input"><input type="password" value="••••••••••••" /></div></div>
+                  <div class="set-row-control"><div class="field-input"><input v-model="currentPasswordInput" type="password" /></div></div>
                 </div>
                 <div class="set-row">
                   <div class="set-row-label">
                     <div class="set-row-label-text">New password</div>
-                    <div class="set-row-hint">Min 12 characters, one number, one symbol.</div>
+                    <div class="set-row-hint">Min 8 characters.</div>
                   </div>
-                  <div class="set-row-control"><div class="field-input"><input type="password" placeholder="Enter a new password" /></div></div>
+                  <div class="set-row-control"><div class="field-input"><input v-model="newPasswordInput" type="password" placeholder="Enter a new password" /></div></div>
                 </div>
                 <div class="set-row">
                   <div class="set-row-label"><div class="set-row-label-text">Confirm new password</div></div>
-                  <div class="set-row-control"><div class="field-input"><input type="password" placeholder="Repeat it" /></div></div>
+                  <div class="set-row-control"><div class="field-input"><input v-model="confirmPasswordInput" type="password" placeholder="Repeat it" /></div></div>
                 </div>
                 <div class="set-row-actions">
-                  <button class="s-btn primary">Update password</button>
+                  <span v-if="passwordError" class="set-error">{{ passwordError }}</span>
+                  <span v-else-if="passwordSaved" class="set-saved">Password updated</span>
+                  <button class="s-btn primary" :disabled="savingPassword" @click="changePassword">{{ savingPassword ? "Updating…" : "Update password" }}</button>
                 </div>
               </div>
             </section>
@@ -367,22 +585,48 @@ const accentColors = [
                 <div class="set-row">
                   <div class="set-row-label">
                     <div class="set-row-label-text">Authenticator app</div>
-                    <div class="set-row-hint">{{ twoFA ? 'Enrolled · paired 2026-04-12 · 1Password (macOS)' : 'Not configured' }}</div>
+                    <div class="set-row-hint">{{ twoFA ? 'Enrolled' : 'Not configured' }}</div>
                   </div>
                   <div class="set-row-control">
-                    <button class="toggle" :class="{ on: twoFA }" role="switch" :aria-checked="twoFA" @click="twoFA = !twoFA">
-                      <span class="thumb" />
-                    </button>
+                    <button v-if="!twoFA" class="s-btn" :disabled="totpBusy" @click="startTwoFactorSetup">Enable</button>
+                    <button v-else class="s-btn" @click="showDisableForm = !showDisableForm">Disable</button>
                   </div>
                 </div>
-                <div class="set-row">
+
+                <div v-if="totpSetup" class="set-row" style="flex-direction:column;align-items:flex-start;gap:10px">
+                  <img :src="totpSetup.qrCode" alt="TOTP QR code" width="160" height="160" style="border-radius:6px" />
+                  <div class="set-row-hint">Can't scan? Enter this code manually: <span class="mono">{{ totpSetup.secret }}</span></div>
+                  <div style="display:flex;gap:8px;align-items:center">
+                    <div class="field-input"><input v-model="totpVerifyCode" placeholder="123456" @keydown.enter="confirmTwoFactorSetup" /></div>
+                    <button class="s-btn primary" :disabled="totpBusy" @click="confirmTwoFactorSetup">Verify & enable</button>
+                  </div>
+                  <span v-if="totpError" class="set-error">{{ totpError }}</span>
+                </div>
+
+                <div v-if="showDisableForm" class="set-row" style="flex-direction:column;align-items:flex-start;gap:10px">
+                  <div class="set-row-hint">Enter your current code or a recovery code to disable two-factor authentication.</div>
+                  <div style="display:flex;gap:8px;align-items:center">
+                    <div class="field-input"><input v-model="disableCode" placeholder="123456" @keydown.enter="confirmDisableTwoFactor" /></div>
+                    <button class="s-btn" :disabled="totpBusy" @click="confirmDisableTwoFactor">Confirm disable</button>
+                  </div>
+                  <span v-if="totpError" class="set-error">{{ totpError }}</span>
+                </div>
+
+                <div v-if="revealedRecoveryCodes" class="set-row" style="flex-direction:column;align-items:flex-start;gap:8px">
+                  <div class="set-row-label-text">Recovery codes — save these now, shown only once</div>
+                  <div class="mono" style="display:grid;grid-template-columns:1fr 1fr;gap:4px">
+                    <span v-for="c in revealedRecoveryCodes" :key="c">{{ c }}</span>
+                  </div>
+                  <button class="s-btn" @click="revealedRecoveryCodes = null">Done</button>
+                </div>
+
+                <div v-if="twoFA" class="set-row">
                   <div class="set-row-label">
                     <div class="set-row-label-text">Recovery codes</div>
-                    <div class="set-row-hint">8 of 10 unused. Re-generate if you suspect a leak.</div>
+                    <div class="set-row-hint">Re-generate if you suspect a leak. Invalidates old codes.</div>
                   </div>
                   <div class="set-row-control" style="gap:8px">
-                    <button class="s-btn">View</button>
-                    <button class="s-btn">Regenerate</button>
+                    <button class="s-btn" @click="regenerateCodes">Regenerate</button>
                   </div>
                 </div>
                 <div class="set-row">
@@ -406,26 +650,22 @@ const accentColors = [
               </div></div>
               <div class="set-section-body">
                 <div class="session-list">
-                  <div v-for="s in sessions" :key="s.device" class="session-row">
+                  <div v-for="(s, i) in sessions" :key="s.id" class="session-row">
                     <div class="session-icon">
-                      <AppIcon :name="s.ci ? 'tool' : 'user'" :size="14" />
+                      <AppIcon :name="s.userAgent.includes('llmlens-sdk') ? 'tool' : 'user'" :size="14" />
                     </div>
                     <div class="session-main">
                       <div class="session-device">
                         {{ s.device }}
-                        <span v-if="s.current" class="kpill ok"><span class="dot ok" /> this device</span>
-                        <span v-if="s.ci" class="kpill mute">CI</span>
+                        <span v-if="i === 0" class="kpill ok"><span class="dot ok" /> this device</span>
                       </div>
-                      <div class="session-meta mono">{{ s.location }} · {{ s.agent }}</div>
+                      <div class="session-meta mono">{{ s.ip }} · {{ s.userAgent }}</div>
                     </div>
-                    <div class="session-time mono">{{ s.time }}</div>
-                    <button v-if="!s.current" class="icon-btn xs" title="Revoke">
+                    <div class="session-time mono">{{ relativeTime(s.lastActiveAt) }}</div>
+                    <button v-if="i !== 0" class="icon-btn xs" title="Revoke" @click="revokeSession(s.id)">
                       <AppIcon name="x" :size="12" />
                     </button>
                   </div>
-                </div>
-                <div class="set-row-actions">
-                  <button class="s-btn danger">Sign out of all other sessions</button>
                 </div>
               </div>
             </section>
@@ -445,7 +685,7 @@ const accentColors = [
                     <div class="set-row-hint">Yesterday's trace volume, error rate, and cost — delivered at 8:00 in your timezone.</div>
                   </div>
                   <div class="set-row-control">
-                    <button class="toggle" :class="{ on: notifs.digestDaily }" role="switch" @click="notifs.digestDaily = !notifs.digestDaily"><span class="thumb" /></button>
+                    <button class="toggle" :class="{ on: notifs.digestDaily }" role="switch" @click="toggleNotif('digestDaily')"><span class="thumb" /></button>
                   </div>
                 </div>
                 <div class="set-row">
@@ -454,7 +694,7 @@ const accentColors = [
                     <div class="set-row-hint">Friday 17:00 — week-over-week trends and the slowest traces.</div>
                   </div>
                   <div class="set-row-control">
-                    <button class="toggle" :class="{ on: notifs.digestWeekly }" role="switch" @click="notifs.digestWeekly = !notifs.digestWeekly"><span class="thumb" /></button>
+                    <button class="toggle" :class="{ on: notifs.digestWeekly }" role="switch" @click="toggleNotif('digestWeekly')"><span class="thumb" /></button>
                   </div>
                 </div>
               </div>
@@ -472,7 +712,7 @@ const accentColors = [
                     <div class="set-row-hint">When &gt; 5% of traces fail in any 5-minute window.</div>
                   </div>
                   <div class="set-row-control">
-                    <button class="toggle" :class="{ on: notifs.alertErr }" role="switch" @click="notifs.alertErr = !notifs.alertErr"><span class="thumb" /></button>
+                    <button class="toggle" :class="{ on: notifs.alertErr }" role="switch" @click="toggleNotif('alertErr')"><span class="thumb" /></button>
                   </div>
                 </div>
                 <div class="set-row">
@@ -481,7 +721,7 @@ const accentColors = [
                     <div class="set-row-hint">When p95 latency for any model exceeds 5s for 10+ minutes.</div>
                   </div>
                   <div class="set-row-control">
-                    <button class="toggle" :class="{ on: notifs.alertLatency }" role="switch" @click="notifs.alertLatency = !notifs.alertLatency"><span class="thumb" /></button>
+                    <button class="toggle" :class="{ on: notifs.alertLatency }" role="switch" @click="toggleNotif('alertLatency')"><span class="thumb" /></button>
                   </div>
                 </div>
                 <div class="set-row">
@@ -490,7 +730,7 @@ const accentColors = [
                     <div class="set-row-hint">Alert at <code class="mono">$50/day</code> for production.</div>
                   </div>
                   <div class="set-row-control">
-                    <button class="toggle" :class="{ on: notifs.alertCost }" role="switch" @click="notifs.alertCost = !notifs.alertCost"><span class="thumb" /></button>
+                    <button class="toggle" :class="{ on: notifs.alertCost }" role="switch" @click="toggleNotif('alertCost')"><span class="thumb" /></button>
                   </div>
                 </div>
                 <div class="set-row">
@@ -499,7 +739,7 @@ const accentColors = [
                     <div class="set-row-hint">When a replay batch finishes or fails.</div>
                   </div>
                   <div class="set-row-control">
-                    <button class="toggle" :class="{ on: notifs.alertReplays }" role="switch" @click="notifs.alertReplays = !notifs.alertReplays"><span class="thumb" /></button>
+                    <button class="toggle" :class="{ on: notifs.alertReplays }" role="switch" @click="toggleNotif('alertReplays')"><span class="thumb" /></button>
                   </div>
                 </div>
               </div>
@@ -511,13 +751,13 @@ const accentColors = [
                 <div class="set-row">
                   <div class="set-row-label"><div class="set-row-label-text">@mentions</div></div>
                   <div class="set-row-control">
-                    <button class="toggle" :class="{ on: notifs.inAppMentions }" role="switch" @click="notifs.inAppMentions = !notifs.inAppMentions"><span class="thumb" /></button>
+                    <button class="toggle" :class="{ on: notifs.inAppMentions }" role="switch" @click="toggleNotif('inAppMentions')"><span class="thumb" /></button>
                   </div>
                 </div>
                 <div class="set-row">
                   <div class="set-row-label"><div class="set-row-label-text">Annotation assignments</div></div>
                   <div class="set-row-control">
-                    <button class="toggle" :class="{ on: notifs.inAppAssignments }" role="switch" @click="notifs.inAppAssignments = !notifs.inAppAssignments"><span class="thumb" /></button>
+                    <button class="toggle" :class="{ on: notifs.inAppAssignments }" role="switch" @click="toggleNotif('inAppAssignments')"><span class="thumb" /></button>
                   </div>
                 </div>
               </div>
@@ -529,13 +769,17 @@ const accentColors = [
                 <div class="set-row">
                   <div class="set-row-label">
                     <div class="set-row-label-text">Slack</div>
-                    <div class="set-row-hint">{{ notifs.slack ? 'Connected to #llm-lens-alerts in workspace yumio.' : 'Not connected' }}</div>
+                    <div class="set-row-hint">{{ slackConnected ? 'Incoming webhook configured.' : 'Paste a Slack incoming webhook URL to connect.' }}</div>
                   </div>
                   <div class="set-row-control" style="gap:8px">
-                    <span v-if="notifs.slack" class="kpill ok"><span class="dot ok" /> connected</span>
-                    <button class="s-btn" @click="notifs.slack = !notifs.slack">{{ notifs.slack ? 'Disconnect' : 'Connect Slack' }}</button>
+                    <span v-if="slackConnected" class="kpill ok"><span class="dot ok" /> connected</span>
+                    <div class="field-input"><input v-model="slackWebhookUrl" type="text" placeholder="https://hooks.slack.com/services/…" class="mono" /></div>
+                    <button class="s-btn" :disabled="slackSaving" @click="saveSlackWebhook">{{ slackSaving ? "Saving…" : "Save" }}</button>
+                    <button v-if="slackConnected" class="s-btn" @click="testSlack">Send test</button>
+                    <button v-if="slackConnected" class="s-btn danger" @click="disconnectSlack">Disconnect</button>
                   </div>
                 </div>
+                <div v-if="slackTestResult" class="set-row-hint" style="padding:0 20px 12px">{{ slackTestResult }}</div>
                 <div class="set-row">
                   <div class="set-row-label">
                     <div class="set-row-label-text">PagerDuty</div>
@@ -689,6 +933,11 @@ const accentColors = [
                   </div>
                 </div>
               </div>
+              <div class="set-row-actions">
+                <span v-if="orgError" class="set-error">{{ orgError }}</span>
+                <span v-else-if="orgSaved" class="set-saved">Saved</span>
+                <button class="s-btn primary" :disabled="savingOrg" @click="saveOrg">{{ savingOrg ? "Saving…" : "Save changes" }}</button>
+              </div>
             </section>
 
             <section class="set-section">
@@ -721,37 +970,62 @@ const accentColors = [
               <div class="set-section-head">
                 <div>
                   <div class="set-section-title">Members</div>
-                  <div class="set-section-sub">4 members · 1 pending · <span class="mono">free tier</span> includes 5 seats.</div>
-                </div>
-                <div style="display:flex;gap:8px">
-                  <button class="s-btn">Copy invite link</button>
-                  <button class="s-btn primary">+ Invite member</button>
+                  <div class="set-section-sub">
+                    {{ members.filter(m => m.status === 'active').length }} members ·
+                    {{ members.filter(m => m.status === 'pending').length }} pending
+                  </div>
                 </div>
               </div>
+              <div class="set-section-body">
+                <div class="set-row">
+                  <div class="set-row-label">
+                    <div class="set-row-label-text">Invite by email</div>
+                    <div v-if="inviteError" class="set-error">{{ inviteError }}</div>
+                  </div>
+                  <div class="set-row-control" style="gap:8px">
+                    <div class="field-input"><input v-model="inviteEmail" type="email" placeholder="teammate@company.com" @keydown.enter="submitInvite" /></div>
+                    <select v-model="inviteRole" class="field-input">
+                      <option v-for="r in memberRoles" :key="r" :value="r">{{ r }}</option>
+                    </select>
+                    <button class="s-btn primary" :disabled="inviting" @click="submitInvite">{{ inviting ? "Inviting…" : "+ Invite" }}</button>
+                  </div>
+                </div>
+                <div v-if="lastInviteUrl" class="set-row">
+                  <div class="set-row-label"><div class="set-row-label-text">Invite link — share this with the invitee</div></div>
+                  <div class="set-row-control" style="gap:8px">
+                    <div class="field-input"><input :value="lastInviteUrl" readonly class="mono" /></div>
+                    <button class="s-btn" @click="copyInviteLink">Copy</button>
+                  </div>
+                </div>
+              </div>
+            </section>
+            <section class="set-section">
               <div class="set-section-body">
                 <div class="member-table">
                   <div class="member-head">
                     <div>Member</div>
                     <div>Role</div>
+                    <div>Invited</div>
                     <div>Joined</div>
-                    <div>Last active</div>
                     <div />
                   </div>
-                  <div v-for="m in members" :key="m.email" class="member-row" :class="{ pending: m.pending }">
+                  <div v-for="m in members" :key="m.id" class="member-row" :class="{ pending: m.status === 'pending' }">
                     <div class="member-cell member-who">
-                      <div class="member-avatar">{{ m.name.slice(0,1) }}</div>
+                      <div class="member-avatar">{{ m.displayName.slice(0,1).toUpperCase() }}</div>
                       <div>
-                        <div class="member-name">{{ m.name }}</div>
+                        <div class="member-name">{{ m.status === "pending" ? "(invite pending)" : m.displayName }}</div>
                         <div class="member-email mono">{{ m.email }}</div>
                       </div>
                     </div>
                     <div class="member-cell">
-                      <span class="role-pill" :class="'role-' + m.role.toLowerCase()">{{ m.role }}</span>
+                      <span class="role-pill" :class="'role-' + m.role">{{ m.role }}</span>
                     </div>
-                    <div class="member-cell mono">{{ m.added }}</div>
-                    <div class="member-cell mono">{{ m.last }}</div>
+                    <div class="member-cell mono">{{ new Date(m.invitedAt).toLocaleDateString() }}</div>
+                    <div class="member-cell mono">{{ m.joinedAt ? new Date(m.joinedAt).toLocaleDateString() : "—" }}</div>
                     <div class="member-cell" style="justify-content:flex-end">
-                      <button class="icon-btn xs"><AppIcon name="more" :size="12" /></button>
+                      <ActionMenu v-if="m.role !== 'owner'" :items="memberActions(m)" @select="(id) => onMemberAction(m, id)">
+                        <button class="icon-btn xs"><AppIcon name="more" :size="12" /></button>
+                      </ActionMenu>
                     </div>
                   </div>
                 </div>
@@ -868,8 +1142,8 @@ const accentColors = [
                   </div>
                   <div class="set-row-control">
                     <div class="segmented">
-                      <button :class="{ active: retention === 1 }"   @click="retention = 1">1 day</button>
-                      <button :class="{ active: retention === 7 }"   @click="retention = 7">7 days</button>
+                      <button :class="{ active: retention === 1 }" :disabled="savingRetention" @click="setRetention(1)">1 day</button>
+                      <button :class="{ active: retention === 7 }" :disabled="savingRetention" @click="setRetention(7)">7 days</button>
                       <button style="opacity:0.45" disabled>30 days</button>
                       <button style="opacity:0.45" disabled>365 days</button>
                     </div>
@@ -907,14 +1181,14 @@ const accentColors = [
                     <div class="set-row-label-text">Export all traces</div>
                     <div class="set-row-hint">JSON Lines · gzipped · split by day.</div>
                   </div>
-                  <div class="set-row-control"><button class="s-btn">Request export</button></div>
+                  <div class="set-row-control"><button class="s-btn" @click="downloadTracesExport">Request export</button></div>
                 </div>
                 <div class="set-row">
                   <div class="set-row-label">
                     <div class="set-row-label-text">Export usage report</div>
-                    <div class="set-row-hint">Monthly usage and cost summary as CSV.</div>
+                    <div class="set-row-hint">Daily usage and cost summary as CSV.</div>
                   </div>
-                  <div class="set-row-control"><button class="s-btn">Download CSV</button></div>
+                  <div class="set-row-control"><button class="s-btn" @click="downloadUsageExport">Download CSV</button></div>
                 </div>
               </div>
             </section>
@@ -978,122 +1252,9 @@ const accentColors = [
 
         </div><!-- /set-body -->
       </div><!-- /set-layout -->
-    </div><!-- /main-col -->
-  </div><!-- /app -->
 </template>
 
 <style scoped>
-/* ── page layout ──────────────────────────────────────────────────────────── */
-.app {
-  display: grid;
-  grid-template-columns: var(--sidebar-w) 1fr;
-  height: 100vh;
-  overflow: hidden;
-  background: var(--bg-0);
-  color: var(--text-0);
-  font-family: var(--font-sans);
-}
-
-/* ── sidebar (mirrors index.vue) ─────────────────────────────────────────── */
-.sidebar {
-  background: var(--bg-1);
-  border-right: 1px solid var(--border-0);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-.sb-brand {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 14px 16px 10px;
-  border-bottom: 1px solid var(--border-0);
-}
-.sb-logo {
-  width: 26px;
-  height: 26px;
-  border-radius: 6px;
-  background: var(--bg-4);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-1);
-}
-.sb-name {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-0);
-  flex: 1;
-}
-.sb-env {
-  font-size: 10px;
-  font-family: var(--font-mono);
-  color: var(--text-2);
-  background: var(--bg-3);
-  border: 1px solid var(--border-1);
-  border-radius: 4px;
-  padding: 1px 6px;
-}
-.sb-section {
-  padding: 10px 8px 4px;
-}
-.sb-section-label {
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: .06em;
-  text-transform: uppercase;
-  color: var(--text-3);
-  padding: 0 8px 4px;
-}
-.sb-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  color: var(--text-1);
-  font-size: 13px;
-  transition: background 0.12s, color 0.12s;
-}
-.sb-item:hover { background: var(--bg-3); color: var(--text-0); }
-.sb-item.active { background: var(--bg-3); color: var(--text-0); }
-.sb-spacer { flex: 1; }
-.sb-footer { padding: 8px; border-top: 1px solid var(--border-0); }
-.sb-user {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px;
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  transition: background 0.12s;
-}
-.sb-user:hover { background: var(--bg-3); }
-.sb-avatar {
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  background: var(--bg-4);
-  border: 1px solid var(--border-1);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-0);
-  flex-shrink: 0;
-}
-.sb-user-name { font-size: 12px; font-weight: 500; color: var(--text-0); }
-.sb-user-org  { font-size: 11px; color: var(--text-3); }
-
-/* ── main column ─────────────────────────────────────────────────────────── */
-.main-col {
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
 /* ── topbar ──────────────────────────────────────────────────────────────── */
 .topbar {
   height: var(--topbar-h);
@@ -1104,9 +1265,9 @@ const accentColors = [
   background: var(--bg-1);
   flex-shrink: 0;
 }
-.crumbs { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-2); }
-.crumb-home { color: var(--text-2); text-decoration: none; }
-.crumb-home:hover { color: var(--text-0); }
+.crumbs { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-2); }
+.crumb-link { color: var(--text-2); text-decoration: none; }
+.crumb-link:hover { color: var(--text-0); }
 .crumb-sep  { color: var(--text-3); }
 .crumb-cur  { color: var(--text-0); font-weight: 500; }
 
@@ -1200,7 +1361,9 @@ const accentColors = [
 .set-row-label-text { font-size: 12.5px; color: var(--text-0); font-weight: 450; }
 .set-row-hint { font-size: 11.5px; color: var(--text-2); margin-top: 2px; line-height: 1.4; }
 .set-row-control { display: flex; align-items: center; flex-shrink: 0; }
-.set-row-actions { display: flex; justify-content: flex-end; padding: 10px 20px; border-top: 1px solid var(--border-0); }
+.set-row-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding: 10px 20px; border-top: 1px solid var(--border-0); }
+.set-error { font-size: 12px; color: var(--danger); }
+.set-saved { font-size: 12px; color: var(--success); }
 .static-val { font-size: 12px; color: var(--text-1); }
 
 /* ── field-input ──────────────────────────────────────────────────────────── */

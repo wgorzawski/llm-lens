@@ -6,9 +6,19 @@ export function useAuth() {
   const isAuthenticated = computed(() => !!token.value);
 
   async function login(email: string, password: string) {
+    const data = await $fetch<
+      | { requiresTwoFactor: true; pendingToken: string }
+      | { token: string; user: { id: string; email: string } }
+    >(`${apiBase}/auth/login`, { method: "POST", body: { email, password } });
+    if ("requiresTwoFactor" in data) return data;
+    token.value = data.token;
+    return data.user;
+  }
+
+  async function loginTwoFactor(pendingToken: string, code: string) {
     const data = await $fetch<{ token: string; user: { id: string; email: string } }>(
-      `${apiBase}/auth/login`,
-      { method: "POST", body: { email, password } }
+      `${apiBase}/auth/login/2fa`,
+      { method: "POST", body: { pendingToken, code } }
     );
     token.value = data.token;
     return data.user;
@@ -28,5 +38,5 @@ export function useAuth() {
     return navigateTo("/login");
   }
 
-  return { token, isAuthenticated, login, register, logout };
+  return { token, isAuthenticated, login, loginTwoFactor, register, logout };
 }

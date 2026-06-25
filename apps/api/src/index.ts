@@ -8,8 +8,13 @@ import { initDb } from "./db/index.js";
 import { TracesController } from "./controllers/traces.controller.js";
 import { AuthController } from "./controllers/auth.controller.js";
 import { ApiKeysController } from "./controllers/api-keys.controller.js";
+import { UsersController } from "./controllers/users.controller.js";
+import { SessionsController } from "./controllers/sessions.controller.js";
+import { OrgsController } from "./controllers/orgs.controller.js";
+import { ExportController } from "./controllers/export.controller.js";
 import { findOrCreateOAuthUser, findUserById } from "./db/users.repository.js";
 import { hashKey, findApiKeyByHash, touchApiKey } from "./db/api-keys.repository.js";
+import { enforceRetention } from "./services/retention.js";
 
 declare module "fastify" {
   interface FastifyInstance {
@@ -23,7 +28,7 @@ const server = Fastify({ logger: true });
 const apiUrl = process.env["API_URL"] ?? "http://localhost:3001";
 const frontendUrl = process.env["FRONTEND_URL"] ?? "http://localhost:3000";
 
-await server.register(cors, { origin: true });
+await server.register(cors, { origin: true, methods: ["GET", "HEAD", "POST", "PATCH", "PUT", "DELETE"] });
 await server.register(jwt, {
   secret: process.env["JWT_SECRET"] ?? "dev-secret-change-in-prod",
 });
@@ -67,6 +72,7 @@ await server.register(oauth2Plugin, {
 
 server.addHook("preHandler", async (request, reply) => {
   if (request.url.startsWith("/api/auth") || request.url === "/health") return;
+  if (request.method === "GET" && /^\/api\/orgs\/invites\/[^/]+$/.test(request.url)) return;
 
   const authHeader = request.headers.authorization;
   if (authHeader?.startsWith("Bearer llmlens_sk_")) {
@@ -84,7 +90,15 @@ server.addHook("preHandler", async (request, reply) => {
 
 await server.register(bootstrap, {
   prefix: "/api",
-  controllers: [TracesController, AuthController, ApiKeysController],
+  controllers: [
+    TracesController,
+    AuthController,
+    ApiKeysController,
+    UsersController,
+    SessionsController,
+    OrgsController,
+    ExportController,
+  ],
 });
 
 server.get("/health", async () => ({ status: "ok" }));
@@ -92,8 +106,21 @@ server.get("/health", async () => ({ status: "ok" }));
 server.get("/api/me", async (request, reply) => {
   const user = await findUserById(request.user.userId);
   if (!user) return reply.status(404).send({ error: "User not found" });
-  return { id: user.id, email: user.email, org: user.org, plan: user.plan };
+  return {
+    id: user.id,
+    email: user.email,
+    org: user.org,
+    plan: user.plan,
+    displayName: user.displayName,
+    handle: user.handle,
+    timezone: user.timezone,
+    locale: user.locale,
+    dateFormat: user.dateFormat,
+    preferences: JSON.parse(user.preferences),
+    totpEnabled: user.totpEnabled,
+  };
 });
+
 
 server.get("/api/auth/google/callback", async (request, reply) => {
   const tokenSet = await server.googleOAuth2.getAccessTokenFromAuthorizationCodeFlow(request, reply);
@@ -135,6 +162,20 @@ server.get("/api/auth/github/callback", async (request, reply) => {
 });
 
 await initDb();
+
+server.get("/api/debug/retention-check", async () => {
+  const { listAllOrgs } = await import("./db/orgs.repository.js");
+  const { db, users, traces } = await import("./db/index.js");
+  const orgs = await listAllOrgs();
+  const allUsers = await db.select().from(users);
+  const allTraces = await db.select().from(traces);
+  return { cwd: process.cwd(), dbUrl: process.env["DATABASE_URL"], orgs, userCount: allUsers.length, traces: allTraces };
+});
+
+void enforceRetention().catch((err) => server.log.error(err));
+setInterval(() => {
+  void enforceRetention().catch((err) => server.log.error(err));
+}, 24 * 60 * 60 * 1000);
 
 try {
   await server.listen({ port: 3001, host: "0.0.0.0" });

@@ -1,26 +1,83 @@
 <script setup lang="ts">
 import type { TraceMessage, ToolCall, ToolResult } from "@llm-lens/types";
+import type { TraceNote } from "~/composables/useTrace";
 import { highlightJson } from "~/utils/json-highlight";
 
-definePageMeta({ layout: false });
+definePageMeta({ layout: "app" });
 
 // ── route + data ──────────────────────────────────────────────────────────────
 const route = useRoute();
 const id = route.params.id as string;
-const { trace, pending, error, fetchTrace } = useTrace(id);
+const { trace, pending, error, fetchTrace, toggleStar, remove, replay, fetchNotes, addNote } = useTrace(id);
 await fetchTrace();
+const notes = ref<TraceNote[]>(await fetchNotes());
 
-// ── auth ──────────────────────────────────────────────────────────────────────
-const { logout, token } = useAuth();
-const { me, fetchMe } = useMe();
-if (!me.value) await fetchMe();
-const userName = computed<string>(() => {
-  if (!token.value) return "user";
+// ── actions: star / replay / delete / diff ────────────────────────────────────
+const actionError = ref<string | null>(null);
+const starring = ref(false);
+const replaying = ref(false);
+const deleting = ref(false);
+
+async function onToggleStar() {
+  starring.value = true;
+  actionError.value = null;
+  try { await toggleStar(); }
+  catch (err) { actionError.value = err instanceof Error ? err.message : String(err); }
+  finally { starring.value = false; }
+}
+
+async function onReplay() {
+  replaying.value = true;
+  actionError.value = null;
   try {
-    const payload = JSON.parse(atob(token.value.split(".")[1]!));
-    return (payload.email as string).split("@")[0] ?? "user";
-  } catch { return "user"; }
-});
+    const replayed = await replay();
+    await navigateTo(`/traces/${replayed.id}`);
+  } catch (err) {
+    actionError.value = err instanceof Error ? err.message : String(err);
+    replaying.value = false;
+  }
+}
+
+function onDiff() {
+  navigateTo(`/?select=${id}`);
+}
+
+async function onMenuSelect(action: string) {
+  if (action === "delete") {
+    deleting.value = true;
+    actionError.value = null;
+    try {
+      await remove();
+      await navigateTo("/");
+    } catch (err) {
+      actionError.value = err instanceof Error ? err.message : String(err);
+      deleting.value = false;
+    }
+  } else if (action === "copy-link") {
+    navigator.clipboard?.writeText(window.location.href);
+  }
+}
+
+// ── notes / annotations ───────────────────────────────────────────────────────
+const noteBody = ref("");
+const postingNote = ref(false);
+
+async function postNote() {
+  const body = noteBody.value.trim();
+  if (!body) return;
+  postingNote.value = true;
+  actionError.value = null;
+  try {
+    const note = await addNote(body);
+    notes.value = [note, ...notes.value];
+    noteBody.value = "";
+  } catch (err) {
+    actionError.value = err instanceof Error ? err.message : String(err);
+  } finally {
+    postingNote.value = false;
+  }
+}
+
 
 // ── ui state ──────────────────────────────────────────────────────────────────
 const inspectorTab = ref<"inspector" | "timeline" | "raw" | "notes">("inspector");
@@ -120,19 +177,6 @@ const rawJsonHtml = computed(() => highlightJson(trace.value ?? {}));
 const rawLineCount = computed(() => JSON.stringify(trace.value, null, 2).split("\n").length);
 const status = computed(() => trace.value ? traceStatus(trace.value) : { ok: true, label: "200 OK" });
 
-// ── sidebar ───────────────────────────────────────────────────────────────────
-const sidebarItems1 = [
-  { id: "traces",    label: "Traces",         icon: "activity",  action: () => navigateTo("/") },
-  { id: "dashboard", label: "Dashboard",      icon: "dashboard", action: () => {} },
-  { id: "compare",   label: "Compare & diff", icon: "diff",      action: () => {} },
-  { id: "replays",   label: "Replays",        icon: "replay",    action: () => {} },
-];
-const sidebarItems2 = [
-  { id: "keys",       label: "API keys",        icon: "key",      action: () => {} },
-  { id: "instrument", label: "Instrumentation", icon: "tool",     action: () => {} },
-  { id: "docs",       label: "Docs",            icon: "docs",     action: () => {} },
-  { id: "settings",   label: "Settings",        icon: "settings", action: () => navigateTo("/settings") },
-];
 
 function copyId() {
   if (trace.value) navigator.clipboard?.writeText(trace.value.id);
@@ -147,54 +191,14 @@ function downloadJson() {
   const a = document.createElement("a");
   a.href = url;
   a.download = `${traceName(trace.value)}.json`;
+  document.body.appendChild(a);
   a.click();
-  URL.revokeObjectURL(url);
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 </script>
 
 <template>
-  <div class="app">
-
-    <!-- ══════════════════════ SIDEBAR ══════════════════════ -->
-    <aside class="sidebar">
-      <div class="sb-brand">
-        <div class="sb-logo"><AppIcon name="logo" :size="14" /></div>
-        <div class="sb-name">LLM Lens</div>
-        <div class="sb-env">prod</div>
-      </div>
-
-      <div class="sb-section">
-        <div class="sb-section-label">Observe</div>
-        <div v-for="it in sidebarItems1" :key="it.id" class="sb-item" @click="it.action()">
-          <AppIcon :name="it.icon" :size="14" />
-          <span>{{ it.label }}</span>
-        </div>
-      </div>
-
-      <div class="sb-section">
-        <div class="sb-section-label">Configure</div>
-        <div v-for="it in sidebarItems2" :key="it.id" class="sb-item" @click="it.action()">
-          <AppIcon :name="it.icon" :size="14" />
-          <span>{{ it.label }}</span>
-        </div>
-      </div>
-
-      <div class="sb-spacer" />
-
-      <div class="sb-footer">
-        <div class="sb-user" @click="logout()">
-          <div class="sb-avatar">{{ userName[0]?.toUpperCase() }}</div>
-          <div style="display:flex;flex-direction:column;line-height:1.2;flex:1;min-width:0">
-            <span class="sb-user-name">{{ userName }}</span>
-            <span class="sb-user-org">{{ me?.org ?? "personal" }} · {{ me?.plan ?? "free" }}</span>
-          </div>
-          <AppIcon name="logout" :size="12" style="color:var(--text-3)" />
-        </div>
-      </div>
-    </aside>
-
-    <!-- ══════════════════════ MAIN COLUMN ══════════════════════ -->
-    <div class="main-col">
 
       <!-- ── Loading ── -->
       <template v-if="pending">
@@ -250,15 +254,31 @@ function downloadJson() {
               </div>
             </div>
             <div class="dh-actions">
-              <button class="btn"><AppIcon name="diff" :size="12" />Diff <span class="kbd">D</span></button>
-              <button class="btn primary"><AppIcon name="replay" :size="12" />Replay <span class="kbd">R</span></button>
-              <button class="btn"><AppIcon name="star" :size="12" /></button>
+              <button class="btn" @click="onDiff"><AppIcon name="diff" :size="12" />Diff <span class="kbd">D</span></button>
+              <button class="btn primary" :disabled="replaying" @click="onReplay">
+                <AppIcon name="replay" :size="12" />{{ replaying ? "Replaying…" : "Replay" }} <span class="kbd">R</span>
+              </button>
+              <button
+                class="btn" :class="{ primary: trace.starred }"
+                :disabled="starring" :title="trace.starred ? 'Unstar' : 'Star'"
+                @click="onToggleStar"
+              ><AppIcon name="star" :size="12" /></button>
               <button class="btn" @click="theme = theme === 'dark' ? 'light' : 'dark'">
                 <AppIcon :name="theme === 'dark' ? 'sun' : 'moon'" :size="12" />
               </button>
-              <button class="btn"><AppIcon name="more" :size="12" /></button>
+              <ActionMenu
+                :items="[
+                  { id: 'copy-link', label: 'Copy link', icon: 'note' },
+                  { id: 'delete', label: 'Delete trace', icon: 'trash', danger: true },
+                ]"
+                @select="onMenuSelect"
+              >
+                <button class="btn" title="More" :disabled="deleting"><AppIcon name="more" :size="12" /></button>
+              </ActionMenu>
             </div>
           </div>
+
+          <div v-if="actionError" class="action-error">{{ actionError }}</div>
 
           <!-- meta strip -->
           <div class="meta-strip">
@@ -404,7 +424,7 @@ function downloadJson() {
               <button class="insp-tab" :class="{ active: inspectorTab === 'timeline' }" @click="inspectorTab = 'timeline'">Timeline</button>
               <button class="insp-tab" :class="{ active: inspectorTab === 'raw' }" @click="inspectorTab = 'raw'">Raw JSON</button>
               <button class="insp-tab" :class="{ active: inspectorTab === 'notes' }" @click="inspectorTab = 'notes'">
-                Notes <span class="count">0</span>
+                Notes <span class="count">{{ notes.length }}</span>
               </button>
             </div>
 
@@ -542,14 +562,30 @@ function downloadJson() {
               <!-- ─ Notes tab ─ -->
               <template v-else-if="inspectorTab === 'notes'">
                 <div class="is-section">
-                  <div class="is-label">Annotations · 0</div>
+                  <div class="is-label">Annotations · {{ notes.length }}</div>
                   <div class="note-composer">
-                    <textarea placeholder="Add a note about this trace…" />
+                    <textarea
+                      v-model="noteBody"
+                      placeholder="Add a note about this trace…"
+                      @keydown.meta.enter="postNote"
+                      @keydown.ctrl.enter="postNote"
+                    />
                     <div class="note-composer-foot">
-                      <span class="hint">md supported · select text in thread to anchor</span>
+                      <span class="hint">md supported · ⌘↵ to post</span>
                       <span class="grow" />
-                      <button class="btn">Cancel</button>
-                      <button class="btn primary">Post <span class="kbd">⌘↵</span></button>
+                      <button class="btn" :disabled="!noteBody" @click="noteBody = ''">Cancel</button>
+                      <button class="btn primary" :disabled="!noteBody.trim() || postingNote" @click="postNote">
+                        {{ postingNote ? "Posting…" : "Post" }} <span class="kbd">⌘↵</span>
+                      </button>
+                    </div>
+                  </div>
+                  <div v-if="notes.length === 0" style="font-size:12px;color:var(--text-2);padding:8px 0">
+                    No annotations yet.
+                  </div>
+                  <div v-else style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
+                    <div v-for="n in notes" :key="n.id" class="note-item">
+                      <div class="note-item-body">{{ n.body }}</div>
+                      <div class="note-item-meta">{{ formatDate(n.createdAt) }}</div>
                     </div>
                   </div>
                 </div>
@@ -560,96 +596,9 @@ function downloadJson() {
 
         </div><!-- /detail-body -->
       </template>
-    </div><!-- /main-col -->
-  </div>
 </template>
 
 <style scoped>
-/* ── Layout ── */
-.app {
-  display: grid;
-  grid-template-columns: var(--sidebar-w) 1fr;
-  height: 100vh;
-  background: var(--bg-1);
-  overflow: hidden;
-  font-family: var(--font-sans);
-  font-size: 13px;
-  color: var(--text-0);
-}
-
-/* ── Sidebar (identical to index.vue) ── */
-.sidebar {
-  background: var(--bg-0);
-  border-right: 1px solid var(--border-0);
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  overflow-y: auto;
-}
-.sb-brand {
-  display: flex; align-items: center; gap: 8px;
-  padding: 14px 14px 12px;
-  border-bottom: 1px solid var(--border-0);
-  height: var(--topbar-h);
-  flex-shrink: 0;
-}
-.sb-logo {
-  width: 22px; height: 22px;
-  display: grid; place-items: center;
-  background: var(--accent-bg);
-  border: 1px solid var(--accent-border);
-  border-radius: var(--radius-sm);
-  color: var(--accent);
-  flex-shrink: 0;
-}
-.sb-name { font-weight: 600; font-size: 13px; letter-spacing: -0.01em; }
-.sb-env {
-  margin-left: auto;
-  font-family: var(--font-mono); font-size: 10px;
-  color: var(--text-2); background: var(--bg-2);
-  padding: 2px 6px; border-radius: 3px; border: 1px solid var(--border-1);
-}
-.sb-section { padding: 10px 8px 4px; }
-.sb-section-label {
-  font-size: 10px; text-transform: uppercase;
-  letter-spacing: 0.08em; color: var(--text-2);
-  padding: 4px 8px; font-weight: 500;
-}
-.sb-item {
-  display: flex; align-items: center; gap: 8px;
-  padding: 6px 8px; border-radius: var(--radius-sm);
-  color: var(--text-1); font-size: 13px;
-  cursor: pointer; white-space: nowrap;
-}
-.sb-item > span:first-of-type { overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
-.sb-item:hover { background: var(--bg-2); color: var(--text-0); }
-.sb-item :deep(svg) { color: var(--text-2); flex-shrink: 0; }
-.sb-item:hover :deep(svg) { color: var(--text-0); }
-.sb-spacer { flex: 1; }
-.sb-footer { padding: 8px; border-top: 1px solid var(--border-0); flex-shrink: 0; }
-.sb-user {
-  display: flex; align-items: center; gap: 8px;
-  padding: 6px 8px; border-radius: var(--radius-sm); cursor: pointer;
-}
-.sb-user:hover { background: var(--bg-2); }
-.sb-avatar {
-  width: 22px; height: 22px; border-radius: 50%;
-  background: var(--accent-bg); border: 1px solid var(--accent-border);
-  color: var(--accent); display: grid; place-items: center;
-  font-size: 11px; font-weight: 600; flex-shrink: 0;
-}
-.sb-user-name { font-size: 12px; }
-.sb-user-org  { font-size: 10px; color: var(--text-2); }
-
-/* ── Main column ── */
-.main-col {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  height: 100vh;
-  overflow: hidden;
-}
-
 /* ── Detail head ── */
 .detail-head {
   padding: 18px 24px 14px;
@@ -967,6 +916,21 @@ function downloadJson() {
 .note-composer-foot { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
 .note-composer-foot .hint { font-size: 10px; color: var(--text-3); font-family: var(--font-mono); }
 .note-composer-foot .grow { flex: 1; }
+.note-item {
+  border: 1px solid var(--border-0); border-radius: var(--radius-md);
+  padding: 8px 10px; background: var(--bg-1);
+}
+.note-item-body { font-size: 12px; color: var(--text-0); white-space: pre-wrap; }
+.note-item-meta { font-size: 10px; color: var(--text-3); font-family: var(--font-mono); margin-top: 4px; }
+
+.action-error {
+  margin: 0 24px 8px;
+  padding: 8px 12px;
+  background: oklch(0.68 0.20 25 / 0.08);
+  border: 1px solid oklch(0.68 0.20 25 / 0.35);
+  border-radius: var(--radius-md);
+  font-size: 12px; color: var(--danger);
+}
 
 /* ── Buttons ── */
 .btn {

@@ -3,7 +3,7 @@ definePageMeta({ layout: false })
 
 useHead({ htmlAttrs: { 'data-theme': 'dark' } })
 
-const { login } = useAuth()
+const { login, loginTwoFactor } = useAuth()
 const config = useRuntimeConfig()
 const apiBase = config.public.apiBase as string
 
@@ -13,12 +13,23 @@ const error = ref<string | null>(null)
 const pending = ref(false)
 const keepSignedIn = ref(true)
 
+const pendingToken = ref<string | null>(null)
+const twoFactorCode = ref('')
+
+async function goHome() {
+  await navigateTo((useRoute().query.redirect as string) || '/')
+}
+
 async function submit() {
   error.value = null
   pending.value = true
   try {
-    await login(email.value, password.value)
-    await navigateTo('/')
+    const result = await login(email.value, password.value)
+    if (result && "requiresTwoFactor" in result) {
+      pendingToken.value = result.pendingToken
+    } else {
+      await goHome()
+    }
   } catch (err: unknown) {
     const e = err as { data?: { error?: string }; message?: string }
     error.value = e.data?.error ?? e.message ?? 'Login failed'
@@ -27,8 +38,23 @@ async function submit() {
   }
 }
 
+async function submitTwoFactor() {
+  if (!pendingToken.value) return
+  error.value = null
+  pending.value = true
+  try {
+    await loginTwoFactor(pendingToken.value, twoFactorCode.value)
+    await goHome()
+  } catch (err: unknown) {
+    const e = err as { data?: { error?: string }; message?: string }
+    error.value = e.data?.error ?? e.message ?? 'Invalid code'
+  } finally {
+    pending.value = false
+  }
+}
+
 function onKeydown(e: KeyboardEvent) {
-  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') submit()
+  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') (pendingToken.value ? submitTwoFactor() : submit())
 }
 </script>
 
@@ -42,8 +68,41 @@ function onKeydown(e: KeyboardEvent) {
         <span>No account? <NuxtLink to="/register">Sign up</NuxtLink></span>
       </div>
 
+      <!-- 2FA step -->
+      <form v-if="pendingToken" class="auth-card" @submit.prevent="submitTwoFactor">
+        <div class="auth-card-mobile-brand">
+          <div class="logo">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+              <circle cx="7" cy="7" r="4.2" />
+              <path d="M10.2 10.2 L13.5 13.5" stroke-linecap="round" />
+              <circle cx="7" cy="7" r="1.5" fill="currentColor" stroke="none" opacity="0.4" />
+            </svg>
+          </div>
+          <span>LLM Lens</span>
+        </div>
+
+        <h2 class="auth-h">Two-factor authentication</h2>
+        <p class="auth-sub">Enter the 6-digit code from your authenticator app, or a recovery code.</p>
+
+        <UiField
+          v-model="twoFactorCode"
+          label="Code"
+          placeholder="123456"
+          :auto-focus="true"
+          :error="!!error"
+          :error-msg="error ?? undefined"
+        />
+
+        <button type="submit" class="btn-submit" :disabled="pending">
+          {{ pending ? 'Verifying…' : 'Verify' }}
+          <span class="kbd">⌘ ↵</span>
+        </button>
+
+        <button type="button" class="btn-back" @click="pendingToken = null">← Back to sign in</button>
+      </form>
+
       <!-- Form -->
-      <form class="auth-card" @submit.prevent="submit">
+      <form v-else class="auth-card" @submit.prevent="submit">
         <!-- Mobile brand (hidden on desktop) -->
         <div class="auth-card-mobile-brand">
           <div class="logo">
@@ -344,6 +403,18 @@ function onKeydown(e: KeyboardEvent) {
 .btn-submit:hover:not(:disabled) { filter: brightness(1.08); }
 .btn-submit:active:not(:disabled) { filter: brightness(0.95); }
 .btn-submit:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.btn-back {
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--text-2);
+  background: none;
+  border: 0;
+  cursor: pointer;
+  text-align: center;
+  width: 100%;
+}
+.btn-back:hover { color: var(--text-0); }
 
 .kbd {
   font-family: var(--font-mono);

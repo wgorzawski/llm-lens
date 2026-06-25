@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { UnifiedTrace, TraceProvider } from "@llm-lens/types";
 
-definePageMeta({ layout: false });
+definePageMeta({ layout: "app" });
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -28,21 +28,11 @@ function rangeToFrom(range: string): string | undefined {
 
 // ── auth ──────────────────────────────────────────────────────────────────────
 
-const { logout, token } = useAuth();
-const { me, fetchMe } = useMe();
-if (!me.value) await fetchMe();
-
-const userName = computed<string>(() => {
-  if (!token.value) return "user";
-  try {
-    const payload = JSON.parse(atob(token.value.split(".")[1]!));
-    return (payload.email as string).split("@")[0] ?? "user";
-  } catch { return "user"; }
-});
+const { token } = useAuth();
+const { me } = useMe();
 
 // ── ui state ─────────────────────────────────────────────────────────────────
 
-const section = ref("traces");
 const variant = useCookie<"list" | "table" | "cards">("llm-lens:traces-variant", {
   default: () => "list",
   sameSite: "lax",
@@ -51,34 +41,62 @@ const filterProvider = ref<TraceProvider | "all">("all");
 const filterModel = ref("all");
 const filterStatus = ref("all");
 const filterLatency = ref("any");
-const filterRange = ref("24h");
+const filterRange = ref("30d");
+const customFrom = ref("");
+const customTo = ref("");
 const sort = ref("recent");
 const selected = ref<Set<string>>(new Set());
 const showTip = ref(true);
+const searchQuery = ref("");
 const { theme } = useAppearance();
 
 const escHandler = (e: KeyboardEvent) => { if (e.key === "Escape") selected.value = new Set(); };
-onMounted(() => window.addEventListener("keydown", escHandler));
+onMounted(() => {
+  window.addEventListener("keydown", escHandler);
+  const presel = useRoute().query.select;
+  if (typeof presel === "string") selected.value = new Set([presel]);
+});
 onUnmounted(() => window.removeEventListener("keydown", escHandler));
+
+let searchDebounce: ReturnType<typeof setTimeout> | undefined;
+const debouncedQuery = ref("");
+watch(searchQuery, (v) => {
+  if (searchDebounce) clearTimeout(searchDebounce);
+  searchDebounce = setTimeout(() => { debouncedQuery.value = v.trim(); }, 300);
+});
 
 // ── data ─────────────────────────────────────────────────────────────────────
 
-const { page, pending, error, fetchTraces } = useTraces({
+const { page, pending, error, fetchTraces, deleteOne, deleteMany, setStarred } = useTraces({
   get provider() { return filterProvider.value === "all" ? undefined : filterProvider.value; },
   get model() { return filterModel.value === "all" ? undefined : filterModel.value; },
   get status() { return filterStatus.value === "all" ? undefined : filterStatus.value; },
   get latency() { return filterLatency.value === "any" ? undefined : filterLatency.value; },
-  get from() { return rangeToFrom(filterRange.value); },
+  get from() {
+    return filterRange.value === "custom"
+      ? (customFrom.value ? new Date(customFrom.value).toISOString() : undefined)
+      : rangeToFrom(filterRange.value);
+  },
+  get to() {
+    return filterRange.value === "custom" && customTo.value
+      ? new Date(customTo.value).toISOString()
+      : undefined;
+  },
+  get q() { return debouncedQuery.value || undefined; },
   get sort() { return sort.value; },
 });
 
+const traceCount = useState("trace-count", () => 0);
 await fetchTraces();
+watch(page, () => { traceCount.value = page.value.total; }, { immediate: true });
 watch(filterProvider, () => fetchTraces(0));
 watch(filterModel, () => fetchTraces(0));
 watch(filterStatus, () => fetchTraces(0));
 watch(filterLatency, () => fetchTraces(0));
-watch(filterRange, () => fetchTraces(0));
+watch(filterRange, () => { if (filterRange.value !== "custom") fetchTraces(0); });
+watch([customFrom, customTo], () => { if (filterRange.value === "custom") fetchTraces(0); });
 watch(sort, () => fetchTraces(0));
+watch(debouncedQuery, () => fetchTraces(0));
 
 // ── computed ──────────────────────────────────────────────────────────────────
 
@@ -128,19 +146,46 @@ function handleRowClick(id: string, isCheckbox = false) {
   navigateTo(`/traces/${id}`);
 }
 
-// sidebar nav
-const sidebarItems1 = [
-  { id: "traces",    label: "Traces",        icon: "activity",  kbd: "T" },
-  { id: "dashboard", label: "Dashboard",     icon: "dashboard", kbd: "D" },
-  { id: "compare",   label: "Compare & diff", icon: "diff",     kbd: "C" },
-  { id: "replays",   label: "Replays",       icon: "replay" },
-];
-const sidebarItems2 = [
-  { id: "keys",       label: "API keys",        icon: "key" },
-  { id: "instrument", label: "Instrumentation", icon: "tool" },
-  { id: "docs",       label: "Docs",            icon: "docs" },
-  { id: "settings",   label: "Settings",        icon: "settings" },
-];
+const bulkError = ref<string | null>(null);
+
+async function onRowMenuSelect(t: UnifiedTrace, action: string) {
+  if (action === "delete") {
+    try { await deleteOne(t.id); await fetchTraces(page.value.offset); }
+    catch (err) { bulkError.value = err instanceof Error ? err.message : String(err); }
+  } else if (action === "star") {
+    try { await setStarred(t.id, !t.starred); await fetchTraces(page.value.offset); }
+    catch (err) { bulkError.value = err instanceof Error ? err.message : String(err); }
+  } else if (action === "copy-link") {
+    navigator.clipboard?.writeText(`${window.location.origin}/traces/${t.id}`);
+  }
+}
+
+async function deleteSelected() {
+  bulkError.value = null;
+  try {
+    await deleteMany([...selected.value]);
+    selected.value = new Set();
+    await fetchTraces(0);
+  } catch (err) {
+    bulkError.value = err instanceof Error ? err.message : String(err);
+  }
+}
+
+function exportSelected() {
+  const rows = traces.value.filter(t => selected.value.has(t.id));
+  const blob = new Blob([JSON.stringify(rows, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `traces-export-${Date.now()}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function compareDiff() {
+  const [a, b] = [...selected.value];
+  if (a && b) navigateTo(`/traces/diff?a=${a}&b=${b}`);
+}
 
 const providerOptions = [
   { id: "all",       label: "All providers" },
@@ -192,72 +237,16 @@ const SKEL_CARDS = Array.from({ length: 9 });
 </script>
 
 <template>
-  <div class="app">
-
-    <!-- ══════════════════════ SIDEBAR ══════════════════════ -->
-    <aside class="sidebar">
-      <div class="sb-brand">
-        <div class="sb-logo"><AppIcon name="logo" :size="14" /></div>
-        <div class="sb-name">LLM Lens</div>
-        <div class="sb-env">prod</div>
-      </div>
-
-      <div class="sb-section">
-        <div class="sb-section-label">Observe</div>
-        <div
-          v-for="it in sidebarItems1" :key="it.id"
-          class="sb-item" :class="{ active: section === it.id }"
-          @click="section = it.id"
-        >
-          <AppIcon :name="it.icon" :size="14" />
-          <span>{{ it.label }}</span>
-          <span v-if="it.id === 'traces'" class="sb-item-badge">{{ fmtN(page.total) }}</span>
-          <span v-else-if="it.kbd" class="sb-item-kbd">{{ it.kbd }}</span>
-        </div>
-      </div>
-
-      <div class="sb-section">
-        <div class="sb-section-label">Configure</div>
-        <div
-          v-for="it in sidebarItems2" :key="it.id"
-          class="sb-item" :class="{ active: section === it.id }"
-          @click="it.id === 'settings' ? navigateTo('/settings') : (section = it.id)"
-        >
-          <AppIcon :name="it.icon" :size="14" />
-          <span>{{ it.label }}</span>
-        </div>
-      </div>
-
-      <div class="sb-spacer" />
-
-      <div class="sb-footer">
-        <div class="sb-user" @click="logout()">
-          <div class="sb-avatar">{{ userName[0]?.toUpperCase() }}</div>
-          <div style="display:flex;flex-direction:column;line-height:1.2;flex:1;min-width:0">
-            <span class="sb-user-name">{{ userName }}</span>
-            <span class="sb-user-org">{{ me?.org ?? "personal" }} · {{ me?.plan ?? "free" }}</span>
-          </div>
-          <AppIcon name="logout" :size="12" style="color:var(--text-3)" />
-        </div>
-      </div>
-    </aside>
-
-    <!-- ══════════════════════ MAIN COLUMN ══════════════════════ -->
-    <div class="main-col">
-
       <!-- topbar -->
       <div class="topbar">
         <div class="crumbs">
-          <span>{{ userName }}</span>
-          <span class="sep">/</span>
-          <span>llm-lens</span>
-          <span class="sep">/</span>
           <span class="here">Traces</span>
         </div>
         <div class="search">
           <AppIcon name="search" :size="12" />
-          <input placeholder="Search traces, models, prompts…" />
-          <span class="kbd">⌘K</span>
+          <input v-model="searchQuery" placeholder="Search traces, models, prompts…" />
+          <span v-if="!searchQuery" class="kbd">⌘K</span>
+          <span v-else class="kbd" style="cursor:pointer" @click="searchQuery = ''">✕</span>
         </div>
         <div class="tb-actions">
           <button class="icon-btn" title="Refresh" :disabled="pending" @click="fetchTraces(page.offset)">
@@ -310,11 +299,16 @@ const SKEL_CARDS = Array.from({ length: 9 });
         <FilterChip
           label="Range"
           :value="filterRange"
-          default-value="24h"
+          default-value="30d"
           :options="rangeOptions"
           :width="180"
           @change="filterRange = $event"
         />
+        <div v-if="filterRange === 'custom'" class="custom-range">
+          <input v-model="customFrom" type="date" />
+          <span style="color:var(--text-3)">→</span>
+          <input v-model="customTo" type="date" />
+        </div>
         <button class="chip-plain" style="color:var(--text-2)">
           <AppIcon name="plus" :size="11" /> filter
         </button>
@@ -470,7 +464,16 @@ const SKEL_CARDS = Array.from({ length: 9 });
                 <div class="col-msg" style="color:var(--text-2)">{{ t.messages.length }}</div>
                 <div class="col-date">{{ getRelative(t.timestamp) }}</div>
                 <div class="col-actions">
-                  <button class="action-btn" title="More" @click.stop><AppIcon name="more" :size="12" /></button>
+                  <ActionMenu
+                    :items="[
+                      { id: 'star', label: t.starred ? 'Unstar' : 'Star', icon: 'star' },
+                      { id: 'copy-link', label: 'Copy link', icon: 'note' },
+                      { id: 'delete', label: 'Delete', icon: 'trash', danger: true },
+                    ]"
+                    @select="onRowMenuSelect(t, $event)"
+                  >
+                    <button class="action-btn" title="More"><AppIcon name="more" :size="12" /></button>
+                  </ActionMenu>
                 </div>
               </div>
             </template>
@@ -651,9 +654,18 @@ const SKEL_CARDS = Array.from({ length: 9 });
                     <button class="action-btn" title="Select" @click.stop="toggleSelect(t.id)">
                       <div class="cbox" :class="{ on: selected.has(t.id) }" style="pointer-events:none" />
                     </button>
-                    <button class="action-btn" title="More" @click.stop>
-                      <AppIcon name="more" :size="12" />
-                    </button>
+                    <ActionMenu
+                      :items="[
+                        { id: 'star', label: t.starred ? 'Unstar' : 'Star', icon: 'star' },
+                        { id: 'copy-link', label: 'Copy link', icon: 'note' },
+                        { id: 'delete', label: 'Delete', icon: 'trash', danger: true },
+                      ]"
+                      @select="onRowMenuSelect(t, $event)"
+                    >
+                      <button class="action-btn" title="More">
+                        <AppIcon name="more" :size="12" />
+                      </button>
+                    </ActionMenu>
                   </div>
                 </div>
 
@@ -728,159 +740,31 @@ const SKEL_CARDS = Array.from({ length: 9 });
         </div>
 
       </div><!-- /content -->
-    </div><!-- /main-col -->
 
     <!-- ══════════════════════ BULK BAR ══════════════════════ -->
     <div v-if="selected.size > 0" class="bulkbar">
       <span class="count">{{ selected.size }}</span>
       <span style="color:var(--text-1)">selected</span>
       <span class="sep" />
-      <button class="primary" :disabled="selected.size !== 2">
+      <button class="primary" :disabled="selected.size !== 2" @click="compareDiff">
         <AppIcon name="diff" :size="12" /> Compare diff
         <span v-if="selected.size !== 2" style="color:var(--text-3);margin-left:4px;font-size:10px">(need 2)</span>
       </button>
       <button><AppIcon name="replay" :size="12" /> Replay</button>
       <button><AppIcon name="note" :size="12" /> Annotate</button>
-      <button><AppIcon name="export" :size="12" /> Export</button>
+      <button @click="exportSelected"><AppIcon name="export" :size="12" /> Export</button>
       <span class="sep" />
-      <button><AppIcon name="trash" :size="12" /></button>
+      <button title="Delete selected" @click="deleteSelected"><AppIcon name="trash" :size="12" /></button>
       <span class="sep" />
       <button @click="selected = new Set()">
         Clear <span class="kbd">esc</span>
       </button>
     </div>
 
-  </div>
+    <div v-if="bulkError" class="bulk-error">{{ bulkError }}</div>
 </template>
 
 <style scoped>
-/* ── Layout ── */
-.app {
-  display: grid;
-  grid-template-columns: var(--sidebar-w) 1fr;
-  height: 100vh;
-  background: var(--bg-1);
-  overflow: hidden;
-  font-family: var(--font-sans);
-  font-size: 13px;
-  color: var(--text-0);
-}
-
-/* ── Sidebar ── */
-.sidebar {
-  background: var(--bg-0);
-  border-right: 1px solid var(--border-0);
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  overflow-y: auto;
-}
-.sb-brand {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 14px 14px 12px;
-  border-bottom: 1px solid var(--border-0);
-  height: var(--topbar-h);
-  flex-shrink: 0;
-}
-.sb-logo {
-  width: 22px; height: 22px;
-  display: grid; place-items: center;
-  background: var(--accent-bg);
-  border: 1px solid var(--accent-border);
-  border-radius: var(--radius-sm);
-  color: var(--accent);
-  flex-shrink: 0;
-}
-.sb-name { font-weight: 600; font-size: 13px; letter-spacing: -0.01em; }
-.sb-env {
-  margin-left: auto;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--text-2);
-  background: var(--bg-2);
-  padding: 2px 6px;
-  border-radius: 3px;
-  border: 1px solid var(--border-1);
-}
-.sb-section { padding: 10px 8px 4px; }
-.sb-section-label {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--text-2);
-  padding: 4px 8px;
-  font-weight: 500;
-}
-.sb-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  border-radius: var(--radius-sm);
-  color: var(--text-1);
-  font-size: 13px;
-  cursor: pointer;
-  position: relative;
-  white-space: nowrap;
-}
-.sb-item > span:first-of-type { overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
-.sb-item:hover { background: var(--bg-2); color: var(--text-0); }
-.sb-item.active { background: var(--bg-3); color: var(--text-0); }
-.sb-item.active::before {
-  content: "";
-  position: absolute;
-  left: -8px; top: 50%;
-  transform: translateY(-50%);
-  width: 2px; height: 14px;
-  background: var(--accent);
-  border-radius: 0 2px 2px 0;
-}
-.sb-item :deep(svg) { color: var(--text-2); flex-shrink: 0; }
-.sb-item.active :deep(svg), .sb-item:hover :deep(svg) { color: var(--text-0); }
-.sb-item-badge {
-  margin-left: auto;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--text-2);
-  background: var(--bg-2);
-  padding: 1px 5px;
-  border-radius: 3px;
-  border: 1px solid var(--border-1);
-}
-.sb-item-kbd { margin-left: auto; font-family: var(--font-mono); font-size: 10px; color: var(--text-3); }
-.sb-spacer { flex: 1; }
-.sb-footer { padding: 8px; border-top: 1px solid var(--border-0); flex-shrink: 0; }
-.sb-user {
-  display: flex; align-items: center; gap: 8px;
-  padding: 6px 8px;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-}
-.sb-user:hover { background: var(--bg-2); }
-.sb-avatar {
-  width: 22px; height: 22px;
-  border-radius: 50%;
-  background: var(--accent-bg);
-  border: 1px solid var(--accent-border);
-  color: var(--accent);
-  display: grid; place-items: center;
-  font-size: 11px; font-weight: 600;
-  flex-shrink: 0;
-}
-.sb-user-name { font-size: 12px; }
-.sb-user-org { font-size: 10px; color: var(--text-2); }
-
-/* ── Main col ── */
-.main-col {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  min-height: 0;
-  height: 100vh;
-}
-
 /* ── Topbar ── */
 .topbar {
   height: var(--topbar-h);
@@ -949,6 +833,17 @@ const SKEL_CARDS = Array.from({ length: 9 });
   white-space: nowrap;
 }
 .chip-plain:hover { color: var(--text-0); border-color: var(--border-2); }
+.custom-range {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 0 6px; height: 24px;
+  background: var(--bg-2); border: 1px solid var(--border-1);
+  border-radius: 4px;
+}
+.custom-range input[type="date"] {
+  background: transparent; border: 0; outline: 0;
+  color: var(--text-0); font-size: 11px; font-family: var(--font-mono);
+  width: 92px;
+}
 .segmented {
   display: inline-flex;
   background: var(--bg-2);
@@ -1313,10 +1208,25 @@ const SKEL_CARDS = Array.from({ length: 9 });
   padding: 0 4px; border-radius: 3px; margin-left: 2px;
 }
 
+/* ── Bulk error ── */
+.bulk-error {
+  position: fixed;
+  bottom: 64px; left: calc(var(--sidebar-w) + 50%);
+  transform: translateX(-50%);
+  background: oklch(0.68 0.20 25 / 0.12);
+  border: 1px solid oklch(0.68 0.20 25 / 0.4);
+  color: var(--danger);
+  padding: 6px 12px;
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  z-index: 10;
+}
+
 /* ── Dot ── */
 .dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
 .dot.ok   { background: var(--success); }
 .dot.warn { background: var(--warn); }
 .dot.slow { background: var(--danger); }
 .dot.err  { background: var(--danger); }
+
 </style>

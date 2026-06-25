@@ -9,6 +9,15 @@ export const users = sqliteTable("users", {
   providerId: text("provider_id"),
   org: text("org").notNull().default("personal"),
   plan: text("plan").notNull().default("free"),
+  displayName: text("display_name").notNull().default(""),
+  handle: text("handle"),
+  timezone: text("timezone").notNull().default("UTC"),
+  locale: text("locale").notNull().default("en-US"),
+  dateFormat: text("date_format").notNull().default("iso"),
+  preferences: text("preferences").notNull().default("{}"),
+  totpSecret: text("totp_secret"),
+  totpEnabled: integer("totp_enabled", { mode: "boolean" }).notNull().default(false),
+  totpRecoveryCodes: text("totp_recovery_codes").notNull().default("[]"),
   createdAt: integer("created_at").notNull().default(sql`(unixepoch('now') * 1000)`),
 });
 
@@ -19,6 +28,8 @@ export const traces = sqliteTable("traces", {
   provider: text("provider").notNull(),
   model: text("model").notNull(),
   status: text("status").notNull().default("ok"),
+  starred: integer("starred", { mode: "boolean" }).notNull().default(false),
+  replayOf: text("replay_of"),
   messages: text("messages").notNull(),
   usage: text("usage").notNull(),
   metadata: text("metadata").notNull(),
@@ -35,7 +46,49 @@ export const apiKeys = sqliteTable("api_keys", {
   createdAt: integer("created_at").notNull().default(sql`(unixepoch('now') * 1000)`),
 });
 
+export const traceNotes = sqliteTable("trace_notes", {
+  id: text("id").primaryKey(),
+  traceId: text("trace_id").notNull(),
+  userId: text("user_id").notNull(),
+  body: text("body").notNull(),
+  createdAt: text("created_at").notNull(),
+});
+
+export const sessions = sqliteTable("sessions", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  device: text("device").notNull(),
+  ip: text("ip").notNull(),
+  userAgent: text("user_agent").notNull(),
+  createdAt: text("created_at").notNull(),
+  lastActiveAt: text("last_active_at").notNull(),
+});
+
+export const orgs = sqliteTable("orgs", {
+  slug: text("slug").primaryKey(),
+  name: text("name").notNull(),
+  defaultEnv: text("default_env").notNull().default("production"),
+  retentionDays: integer("retention_days").notNull().default(7),
+  createdAt: integer("created_at").notNull().default(sql`(unixepoch('now') * 1000)`),
+});
+
+export const orgMembers = sqliteTable("org_members", {
+  id: text("id").primaryKey(),
+  orgSlug: text("org_slug").notNull(),
+  userId: text("user_id"),
+  email: text("email").notNull(),
+  role: text("role").notNull().default("member"),
+  status: text("status").notNull().default("pending"),
+  inviteToken: text("invite_token"),
+  invitedAt: integer("invited_at").notNull().default(sql`(unixepoch('now') * 1000)`),
+  joinedAt: integer("joined_at"),
+});
+
 export type TraceRow = typeof traces.$inferSelect;
 export type NewTraceRow = typeof traces.$inferInsert;
 export type UserRow = typeof users.$inferSelect;
 export type ApiKeyRow = typeof apiKeys.$inferSelect;
+export type TraceNoteRow = typeof traceNotes.$inferSelect;
+export type SessionRow = typeof sessions.$inferSelect;
+export type OrgRow = typeof orgs.$inferSelect;
+export type OrgMemberRow = typeof orgMembers.$inferSelect;

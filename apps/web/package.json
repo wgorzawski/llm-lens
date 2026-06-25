@@ -5,6 +5,7 @@
   "scripts": {
     "prepare": "nuxt prepare",
     "dev": "nuxt dev --port 3000",
+    "dev:e2e": "NUXT_IGNORE_LOCK=1 nuxt dev --port 3002",
     "build": "nuxt build",
     "preview": "nuxt preview",
     "typecheck": "nuxt typecheck",

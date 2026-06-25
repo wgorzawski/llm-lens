@@ -59,4 +59,7 @@ export interface UnifiedTrace {
   metadata: TraceMetadata;
   /** Raw original log, kept for debugging */
   raw?: unknown;
+  starred?: boolean;
+  /** id of the original trace this one replayed, if any */
+  replayOf?: string;
 }
