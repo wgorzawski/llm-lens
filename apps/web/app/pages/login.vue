@@ -54,7 +54,9 @@ async function submitTwoFactor() {
 }
 
 function onKeydown(e: KeyboardEvent) {
-  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') (pendingToken.value ? submitTwoFactor() : submit())
+  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+    if (pendingToken.value) submitTwoFactor(); else submit();
+  }
 }
 </script>
 

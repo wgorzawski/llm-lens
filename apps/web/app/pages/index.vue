@@ -26,11 +26,6 @@ function rangeToFrom(range: string): string | undefined {
   return ms ? new Date(Date.now() - ms).toISOString() : undefined;
 }
 
-// ── auth ──────────────────────────────────────────────────────────────────────
-
-const { token } = useAuth();
-const { me } = useMe();
-
 // ── ui state ─────────────────────────────────────────────────────────────────
 
 const variant = useCookie<"list" | "table" | "cards">("llm-lens:traces-variant", {
@@ -137,7 +132,7 @@ function goToPage(p: number) { fetchTraces((p - 1) * page.value.limit); }
 
 function toggleSelect(id: string) {
   const s = new Set(selected.value);
-  s.has(id) ? s.delete(id) : s.add(id);
+  if (s.has(id)) s.delete(id); else s.add(id);
   selected.value = s;
 }
 
@@ -244,7 +239,7 @@ const SKEL_CARDS = Array.from({ length: 9 });
         </div>
         <div class="search">
           <AppIcon name="search" :size="12" />
-          <input v-model="searchQuery" placeholder="Search traces, models, prompts…" />
+          <input v-model="searchQuery" placeholder="Search traces, models, prompts…" >
           <span v-if="!searchQuery" class="kbd">⌘K</span>
           <span v-else class="kbd" style="cursor:pointer" @click="searchQuery = ''">✕</span>
         </div>
@@ -305,9 +300,9 @@ const SKEL_CARDS = Array.from({ length: 9 });
           @change="filterRange = $event"
         />
         <div v-if="filterRange === 'custom'" class="custom-range">
-          <input v-model="customFrom" type="date" />
+          <input v-model="customFrom" type="date" >
           <span style="color:var(--text-3)">→</span>
-          <input v-model="customTo" type="date" />
+          <input v-model="customTo" type="date" >
         </div>
         <button class="chip-plain" style="color:var(--text-2)">
           <AppIcon name="plus" :size="11" /> filter
