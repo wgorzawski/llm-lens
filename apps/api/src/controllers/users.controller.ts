@@ -1,4 +1,5 @@
-import { Controller, PATCH, POST } from "fastify-decorators";
+import { Controller, GET, PATCH, POST } from "fastify-decorators";
+import { BCRYPT_ROUNDS } from "../constants.js";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import bcrypt from "bcryptjs";
 import QRCode from "qrcode";
@@ -30,7 +31,7 @@ async function verifyTotpOrRecovery(user: UserRow, code: string): Promise<boolea
   return consumeRecoveryCode(user.id, hashRecoveryCode(code));
 }
 
-function toMe(user: NonNullable<Awaited<ReturnType<typeof findUserById>>>) {
+function toMe(user: UserRow) {
   return {
     id: user.id,
     email: user.email,
@@ -48,6 +49,13 @@ function toMe(user: NonNullable<Awaited<ReturnType<typeof findUserById>>>) {
 
 @Controller("/users")
 export class UsersController {
+  @GET("/me")
+  async getMe(request: FastifyRequest, reply: FastifyReply) {
+    const user = await findUserById(request.user.userId);
+    if (!user) return reply.status(404).send({ error: "User not found" });
+    return toMe(user);
+  }
+
   @PATCH("/me")
   async updateMe(
     request: FastifyRequest<{ Body: ProfileUpdate }>,
@@ -91,7 +99,7 @@ export class UsersController {
     const valid = await bcrypt.compare(currentPassword, user.passwordHash);
     if (!valid) return reply.status(400).send({ error: "Current password is incorrect" });
 
-    const newHash = await bcrypt.hash(newPassword, 10);
+    const newHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
     await updatePasswordHash(user.id, newHash);
     return reply.status(204).send();
   }

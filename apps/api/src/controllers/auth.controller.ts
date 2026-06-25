@@ -2,6 +2,7 @@ import { Controller, POST } from "fastify-decorators";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import bcrypt from "bcryptjs";
 import { createUser, findUserByEmail, findUserById, consumeRecoveryCode } from "../db/users.repository.js";
+import { BCRYPT_ROUNDS, PENDING_2FA_TOKEN_TTL } from "../constants.js";
 import { createSession } from "../db/sessions.repository.js";
 import { verifyTotpCode, hashRecoveryCode } from "../services/totp.js";
 
@@ -40,7 +41,7 @@ export class AuthController {
       return reply.status(409).send({ error: "Email already in use" });
     }
 
-    const passwordHash = await bcrypt.hash(password, 10);
+    const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
     const user = await createUser(email, passwordHash);
 
     const token = request.server.jwt.sign({ userId: user.id, email: user.email });
@@ -73,7 +74,7 @@ export class AuthController {
     if (user.totpEnabled) {
       const pendingToken = request.server.jwt.sign(
         { userId: user.id, email: user.email, pending2fa: true },
-        { expiresIn: "5m" }
+        { expiresIn: PENDING_2FA_TOKEN_TTL }
       );
       return { requiresTwoFactor: true, pendingToken };
     }

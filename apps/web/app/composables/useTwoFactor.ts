@@ -5,34 +5,26 @@ export interface TotpSetup {
 }
 
 export function useTwoFactor() {
-  const config = useRuntimeConfig();
-  const apiBase = config.public.apiBase as string;
-  const { token } = useAuth();
-
-  function authHeaders(): Record<string, string> {
-    return token.value ? { Authorization: `Bearer ${token.value}` } : {};
-  }
+  const { apiFetch } = useApiFetch();
 
   async function setup(): Promise<TotpSetup> {
-    return $fetch<TotpSetup>(`${apiBase}/users/me/2fa/setup`, { method: "POST", headers: authHeaders() });
+    return apiFetch<TotpSetup>("/users/me/2fa/setup", { method: "POST" });
   }
 
   async function verify(code: string): Promise<{ recoveryCodes: string[] }> {
-    return $fetch<{ recoveryCodes: string[] }>(`${apiBase}/users/me/2fa/verify`, {
+    return apiFetch<{ recoveryCodes: string[] }>("/users/me/2fa/verify", {
       method: "POST",
-      headers: authHeaders(),
       body: { code },
     });
   }
 
   async function disable(code: string): Promise<void> {
-    await $fetch(`${apiBase}/users/me/2fa/disable`, { method: "POST", headers: authHeaders(), body: { code } });
+    await apiFetch("/users/me/2fa/disable", { method: "POST", body: { code } });
   }
 
   async function regenerateRecoveryCodes(code: string): Promise<{ recoveryCodes: string[] }> {
-    return $fetch<{ recoveryCodes: string[] }>(`${apiBase}/users/me/2fa/recovery-codes/regenerate`, {
+    return apiFetch<{ recoveryCodes: string[] }>("/users/me/2fa/recovery-codes/regenerate", {
       method: "POST",
-      headers: authHeaders(),
       body: { code },
     });
   }

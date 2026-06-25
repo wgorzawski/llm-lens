@@ -13,39 +13,32 @@ export interface OrgMember {
 }
 
 export function useOrgMembers() {
-  const config = useRuntimeConfig();
-  const apiBase = config.public.apiBase as string;
-  const { token } = useAuth();
+  const { apiFetch } = useApiFetch();
 
   const members = ref<OrgMember[]>([]);
 
-  function authHeaders(): Record<string, string> {
-    return token.value ? { Authorization: `Bearer ${token.value}` } : {};
-  }
-
   async function fetchMembers() {
-    members.value = await $fetch<OrgMember[]>(`${apiBase}/orgs/me/members`, { headers: authHeaders() });
+    members.value = await apiFetch<OrgMember[]>("/orgs/me/members");
   }
 
   async function inviteMember(email: string, role: MemberRole): Promise<{ inviteUrl: string }> {
-    const result = await $fetch<{ id: string; token: string; inviteUrl: string }>(
-      `${apiBase}/orgs/me/members/invite`,
-      { method: "POST", headers: authHeaders(), body: { email, role } }
+    const result = await apiFetch<{ id: string; token: string; inviteUrl: string }>(
+      "/orgs/me/members/invite",
+      { method: "POST", body: { email, role } },
     );
     await fetchMembers();
     return result;
   }
 
   async function updateRole(id: string, role: MemberRole) {
-    members.value = await $fetch<OrgMember[]>(`${apiBase}/orgs/me/members/${id}`, {
+    members.value = await apiFetch<OrgMember[]>(`/orgs/me/members/${id}`, {
       method: "PATCH",
-      headers: authHeaders(),
       body: { role },
     });
   }
 
   async function removeMember(id: string) {
-    await $fetch(`${apiBase}/orgs/me/members/${id}`, { method: "DELETE", headers: authHeaders() });
+    await apiFetch(`/orgs/me/members/${id}`, { method: "DELETE" });
     members.value = members.value.filter((m) => m.id !== id);
   }
 

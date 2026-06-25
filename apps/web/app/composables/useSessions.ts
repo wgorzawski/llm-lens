@@ -9,28 +9,22 @@ export interface Session {
 }
 
 export function useSessions() {
-  const config = useRuntimeConfig();
-  const apiBase = config.public.apiBase as string;
-  const { token } = useAuth();
+  const { apiFetch } = useApiFetch();
 
   const sessions = ref<Session[]>([]);
   const pending = ref(false);
 
-  function authHeaders(): Record<string, string> {
-    return token.value ? { Authorization: `Bearer ${token.value}` } : {};
-  }
-
   async function fetchSessions() {
     pending.value = true;
     try {
-      sessions.value = await $fetch<Session[]>(`${apiBase}/sessions`, { headers: authHeaders() });
+      sessions.value = await apiFetch<Session[]>("/sessions");
     } finally {
       pending.value = false;
     }
   }
 
   async function revoke(id: string) {
-    await $fetch(`${apiBase}/sessions/${id}`, { method: "DELETE", headers: authHeaders() });
+    await apiFetch(`/sessions/${id}`, { method: "DELETE" });
     sessions.value = sessions.value.filter((s) => s.id !== id);
   }
 

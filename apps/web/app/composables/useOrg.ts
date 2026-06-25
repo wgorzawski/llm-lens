@@ -13,26 +13,16 @@ export interface OrgUpdate {
 }
 
 export function useOrg() {
-  const config = useRuntimeConfig();
-  const apiBase = config.public.apiBase as string;
-  const { token } = useAuth();
+  const { apiFetch } = useApiFetch();
 
   const org = ref<Org | null>(null);
 
-  function authHeaders(): Record<string, string> {
-    return token.value ? { Authorization: `Bearer ${token.value}` } : {};
-  }
-
   async function fetchOrg() {
-    org.value = await $fetch<Org>(`${apiBase}/orgs/me`, { headers: authHeaders() });
+    org.value = await apiFetch<Org>("/orgs/me");
   }
 
   async function updateOrg(update: OrgUpdate): Promise<Org> {
-    const updated = await $fetch<Org>(`${apiBase}/orgs/me`, {
-      method: "PATCH",
-      headers: authHeaders(),
-      body: update,
-    });
+    const updated = await apiFetch<Org>("/orgs/me", { method: "PATCH", body: update });
     org.value = updated;
     return updated;
   }

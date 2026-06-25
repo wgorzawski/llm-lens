@@ -21,47 +21,33 @@ export interface ProfileUpdate {
 }
 
 export function useMe() {
-  const config = useRuntimeConfig();
-  const apiBase = config.public.apiBase as string;
+  const { apiFetch } = useApiFetch();
   const { token } = useAuth();
 
   const me = useState<Me | null>("me", () => null);
 
-  function authHeaders(): Record<string, string> {
-    return token.value ? { Authorization: `Bearer ${token.value}` } : {};
-  }
-
   async function fetchMe() {
     if (!token.value) return;
     try {
-      me.value = await $fetch<Me>(`${apiBase}/me`, { headers: authHeaders() });
+      me.value = await apiFetch<Me>("/users/me");
     } catch {
       me.value = null;
     }
   }
 
   async function updateProfile(update: ProfileUpdate): Promise<Me> {
-    const updated = await $fetch<Me>(`${apiBase}/users/me`, {
-      method: "PATCH",
-      headers: authHeaders(),
-      body: update,
-    });
+    const updated = await apiFetch<Me>("/users/me", { method: "PATCH", body: update });
     me.value = { ...me.value, ...updated } as Me;
     return updated;
   }
 
   async function updatePassword(currentPassword: string, newPassword: string): Promise<void> {
-    await $fetch(`${apiBase}/users/me/password`, {
-      method: "PATCH",
-      headers: authHeaders(),
-      body: { currentPassword, newPassword },
-    });
+    await apiFetch("/users/me/password", { method: "PATCH", body: { currentPassword, newPassword } });
   }
 
   async function updatePreferences(preferences: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const res = await $fetch<{ preferences: Record<string, unknown> }>(`${apiBase}/users/me/preferences`, {
+    const res = await apiFetch<{ preferences: Record<string, unknown> }>("/users/me/preferences", {
       method: "PATCH",
-      headers: authHeaders(),
       body: preferences,
     });
     if (me.value) me.value.preferences = res.preferences;

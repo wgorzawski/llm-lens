@@ -18,8 +18,7 @@ export function useTraces(opts?: {
   sort?: string;
   limit?: number;
 }) {
-  const config = useRuntimeConfig();
-  const apiBase = config.public.apiBase as string;
+  const { apiFetch } = useApiFetch();
 
   const page = ref<TracesPage>({ traces: [], total: 0, limit: 50, offset: 0 });
   const pending = ref(false);
@@ -28,6 +27,7 @@ export function useTraces(opts?: {
   async function fetchTraces(offset = 0) {
     pending.value = true;
     error.value = null;
+
     const params = new URLSearchParams({
       limit: String(opts?.limit ?? 50),
       offset: String(offset),
@@ -40,11 +40,9 @@ export function useTraces(opts?: {
     if (opts?.to) params.set("to", opts.to);
     if (opts?.q) params.set("q", opts.q);
     if (opts?.sort) params.set("sort", opts.sort);
+
     try {
-      const data = await $fetch<TracesPage>(`${apiBase}/traces?${params}`, {
-        headers: authHeaders(),
-      });
-      page.value = data;
+      page.value = await apiFetch<TracesPage>(`/traces?${params}`);
     } catch (err) {
       error.value = err instanceof Error ? err.message : String(err);
     } finally {
@@ -52,30 +50,20 @@ export function useTraces(opts?: {
     }
   }
 
-  function authHeaders(): Record<string, string> {
-    const { token } = useAuth();
-    return token.value ? { Authorization: `Bearer ${token.value}` } : {};
-  }
-
   async function deleteOne(id: string) {
-    await $fetch(`${apiBase}/traces/${id}`, { method: "DELETE", headers: authHeaders() });
+    await apiFetch(`/traces/${id}`, { method: "DELETE" });
   }
 
   async function deleteMany(ids: string[]): Promise<number> {
-    const res = await $fetch<{ deletedCount: number }>(`${apiBase}/traces`, {
+    const res = await apiFetch<{ deletedCount: number }>("/traces", {
       method: "DELETE",
-      headers: authHeaders(),
       body: { ids },
     });
     return res.deletedCount;
   }
 
   async function setStarred(id: string, starred: boolean): Promise<UnifiedTrace> {
-    return $fetch<UnifiedTrace>(`${apiBase}/traces/${id}`, {
-      method: "PATCH",
-      headers: authHeaders(),
-      body: { starred },
-    });
+    return apiFetch<UnifiedTrace>(`/traces/${id}`, { method: "PATCH", body: { starred } });
   }
 
   return { page, pending, error, fetchTraces, deleteOne, deleteMany, setStarred };

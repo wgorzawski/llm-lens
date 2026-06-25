@@ -30,6 +30,10 @@ export default defineConfig({
       reuseExistingServer: true,
       cwd: path.resolve(__dirname, "../api"),
       timeout: 30_000,
+      env: {
+        JWT_SECRET: process.env["JWT_SECRET"] ?? "e2e-test-secret",
+        DATABASE_URL: process.env["E2E_DATABASE_URL"] ?? "file:./test-smoke.db",
+      },
     },
     {
       command: "NUXT_IGNORE_LOCK=1 pnpm exec nuxt dev --port 3002",

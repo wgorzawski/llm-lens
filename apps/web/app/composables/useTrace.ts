@@ -9,25 +9,17 @@ export interface TraceNote {
 }
 
 export function useTrace(id: string) {
-  const config = useRuntimeConfig();
-  const apiBase = config.public.apiBase as string;
+  const { apiFetch } = useApiFetch();
 
   const trace = ref<UnifiedTrace | null>(null);
   const pending = ref(false);
   const error = ref<string | null>(null);
 
-  function authHeaders(): Record<string, string> {
-    const { token } = useAuth();
-    return token.value ? { Authorization: `Bearer ${token.value}` } : {};
-  }
-
   async function fetchTrace() {
     pending.value = true;
     error.value = null;
     try {
-      trace.value = await $fetch<UnifiedTrace>(`${apiBase}/traces/${id}`, {
-        headers: authHeaders(),
-      });
+      trace.value = await apiFetch<UnifiedTrace>(`/traces/${id}`);
     } catch (err) {
       error.value = err instanceof Error ? err.message : String(err);
     } finally {
@@ -37,40 +29,26 @@ export function useTrace(id: string) {
 
   async function toggleStar() {
     if (!trace.value) return;
-    const next = !trace.value.starred;
-    trace.value = await $fetch<UnifiedTrace>(`${apiBase}/traces/${id}`, {
+    trace.value = await apiFetch<UnifiedTrace>(`/traces/${id}`, {
       method: "PATCH",
-      headers: authHeaders(),
-      body: { starred: next },
+      body: { starred: !trace.value.starred },
     });
   }
 
   async function remove() {
-    await $fetch(`${apiBase}/traces/${id}`, {
-      method: "DELETE",
-      headers: authHeaders(),
-    });
+    await apiFetch(`/traces/${id}`, { method: "DELETE" });
   }
 
   async function replay(): Promise<UnifiedTrace> {
-    return $fetch<UnifiedTrace>(`${apiBase}/traces/${id}/replay`, {
-      method: "POST",
-      headers: authHeaders(),
-    });
+    return apiFetch<UnifiedTrace>(`/traces/${id}/replay`, { method: "POST" });
   }
 
   async function fetchNotes(): Promise<TraceNote[]> {
-    return $fetch<TraceNote[]>(`${apiBase}/traces/${id}/notes`, {
-      headers: authHeaders(),
-    });
+    return apiFetch<TraceNote[]>(`/traces/${id}/notes`);
   }
 
   async function addNote(body: string): Promise<TraceNote> {
-    return $fetch<TraceNote>(`${apiBase}/traces/${id}/notes`, {
-      method: "POST",
-      headers: authHeaders(),
-      body: { body },
-    });
+    return apiFetch<TraceNote>(`/traces/${id}/notes`, { method: "POST", body: { body } });
   }
 
   return { trace, pending, error, fetchTrace, toggleStar, remove, replay, fetchNotes, addNote };

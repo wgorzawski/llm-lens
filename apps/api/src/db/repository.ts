@@ -1,6 +1,7 @@
 import { eq, gte, lte, desc, count, and, inArray, sql } from "drizzle-orm";
 import { db, traces, traceNotes, client } from "./index.js";
 import type { UnifiedTrace, TraceProvider, TraceMessage } from "@llm-lens/types";
+import { LATENCY_WARN_MS, LATENCY_SLOW_MS, FTS_MATCH_LIMIT, EXPORT_PAGE_SIZE } from "../constants.js";
 
 export type TraceSort = "recent" | "latency" | "cost" | "tokens";
 export type TraceStatus = "ok" | "warn" | "err";
@@ -43,7 +44,7 @@ function sortOrder(sort: TraceSort | undefined) {
 
 function deriveStatus(metadata: UnifiedTrace["metadata"]): TraceStatus {
   if (metadata.error || (metadata.statusCode && metadata.statusCode >= 400)) return "err";
-  if ((metadata.durationMs ?? 0) >= 1500) return "warn";
+  if ((metadata.durationMs ?? 0) >= LATENCY_WARN_MS) return "warn";
   return "ok";
 }
 
@@ -51,11 +52,11 @@ const durationExpr = sql`json_extract(${traces.metadata}, '$.durationMs')`;
 
 function latencyCondition(bucket: LatencyBucket | undefined) {
   switch (bucket) {
-    case "fast": return sql`${durationExpr} < 500`;
-    case "med": return sql`${durationExpr} >= 500 AND ${durationExpr} < 1500`;
-    case "slow": return sql`${durationExpr} >= 1500 AND ${durationExpr} < 5000`;
-    case "verySlow": return sql`${durationExpr} >= 5000`;
-    default: return undefined;
+    case "fast":     return sql`${durationExpr} < 500`;
+    case "med":      return sql`${durationExpr} >= 500 AND ${durationExpr} < ${LATENCY_WARN_MS}`;
+    case "slow":     return sql`${durationExpr} >= ${LATENCY_WARN_MS} AND ${durationExpr} < ${LATENCY_SLOW_MS}`;
+    case "verySlow": return sql`${durationExpr} >= ${LATENCY_SLOW_MS}`;
+    default:         return undefined;
   }
 }
 
@@ -111,7 +112,7 @@ export async function listTraces(opts: ListOptions): Promise<ListResult> {
   let matchingIds: string[] | undefined;
   if (opts.q) {
     const ftsRows = await client.execute({
-      sql: `SELECT id FROM traces_fts WHERE traces_fts MATCH ? LIMIT 500`,
+      sql: `SELECT id FROM traces_fts WHERE traces_fts MATCH ? LIMIT ${FTS_MATCH_LIMIT}`,
       args: [ftsEscape(opts.q)],
     });
     matchingIds = ftsRows.rows.map((r) => r["id"] as string);
@@ -174,7 +175,7 @@ export async function deleteTraces(ids: string[], userId: string): Promise<numbe
 }
 
 export async function* iterateAllTraces(userId: string): AsyncGenerator<UnifiedTrace> {
-  const pageSize = 200;
+  const pageSize = EXPORT_PAGE_SIZE;
   let offset = 0;
   for (;;) {
     const rows = await db
