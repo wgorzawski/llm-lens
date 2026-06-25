@@ -8,9 +8,11 @@
     "test": "pnpm -r test",
     "test:e2e": "pnpm --filter @llm-lens/e2e test",
     "lint": "pnpm -r lint",
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "prepare": "husky"
   },
   "devDependencies": {
+    "husky": "^9.1.7",
     "typescript": "^5.8.3"
   },
   "packageManager": "pnpm@11.1.2",

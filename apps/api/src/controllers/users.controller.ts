@@ -55,14 +55,14 @@ export class UsersController {
   ) {
     const { displayName, handle, timezone, locale, dateFormat } = request.body;
 
-    if (handle !== undefined && handle.trim()) {
+    if (handle != null && handle.trim()) {
       const existing = await findUserByHandle(handle.trim(), request.user.userId);
       if (existing) return reply.status(409).send({ error: "Handle is already taken" });
     }
 
     const update: ProfileUpdate = {};
     if (displayName !== undefined) update.displayName = displayName;
-    if (handle !== undefined) update.handle = handle.trim() || null;
+    if (handle !== undefined) update.handle = handle != null ? handle.trim() || null : null;
     if (timezone !== undefined) update.timezone = timezone;
     if (locale !== undefined) update.locale = locale;
     if (dateFormat !== undefined) update.dateFormat = dateFormat;
