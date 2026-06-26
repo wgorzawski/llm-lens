@@ -1,10 +1,10 @@
 import crypto from "node:crypto";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db, orgMembers, users } from "./index.js";
 
 export type MemberRole = "owner" | "admin" | "member" | "viewer";
 
-export async function ensureOwnerMembership(orgSlug: string, userId: string, email: string) {
+export async function getOrCreateOwnerMembership(orgSlug: string, userId: string, email: string) {
   const existing = await db
     .select()
     .from(orgMembers)
@@ -26,27 +26,25 @@ export async function ensureOwnerMembership(orgSlug: string, userId: string, ema
 }
 
 export async function listMembers(orgSlug: string) {
-  const rows = await db.select().from(orgMembers).where(eq(orgMembers.orgSlug, orgSlug));
-  const userIds = rows.map((r) => r.userId).filter((id): id is string => !!id);
-  const userRows = userIds.length
-    ? await db.select().from(users).where(inArray(users.id, userIds))
-    : [];
-  const byId = new Map(userRows.map((u) => [u.id, u]));
+  const rows = await db
+    .select()
+    .from(orgMembers)
+    .leftJoin(users, eq(orgMembers.userId, users.id))
+    .where(eq(orgMembers.orgSlug, orgSlug));
 
   return rows
-    .map((r) => {
-      const u = r.userId ? byId.get(r.userId) : undefined;
-      const email = u?.email ?? r.email;
+    .map(({ org_members: m, users: u }) => {
+      const email = u?.email ?? m.email;
       return {
-        id: r.id,
-        userId: r.userId,
+        id: m.id,
+        userId: m.userId,
         email,
         displayName: u?.displayName || email.split("@")[0],
-        role: r.role as MemberRole,
-        status: r.status as "pending" | "active",
-        inviteToken: r.status === "pending" ? r.inviteToken : null,
-        invitedAt: r.invitedAt,
-        joinedAt: r.joinedAt,
+        role: m.role as MemberRole,
+        status: m.status as "pending" | "active",
+        inviteToken: m.status === "pending" ? m.inviteToken : null,
+        invitedAt: m.invitedAt,
+        joinedAt: m.joinedAt,
       };
     })
     .sort((a, b) => a.invitedAt - b.invitedAt);

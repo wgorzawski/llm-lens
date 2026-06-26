@@ -33,6 +33,7 @@ export default defineConfig({
       env: {
         JWT_SECRET: process.env["JWT_SECRET"] ?? "e2e-test-secret",
         DATABASE_URL: process.env["E2E_DATABASE_URL"] ?? "file:./test-smoke.db",
+        AUTH_RATE_LIMIT_MAX: "1000",
       },
     },
     {

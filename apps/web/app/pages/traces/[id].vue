@@ -22,7 +22,7 @@ async function onToggleStar() {
   starring.value = true;
   actionError.value = null;
   try { await toggleStar(); }
-  catch (err) { actionError.value = err instanceof Error ? err.message : String(err); }
+  catch (err) { actionError.value = getErrorMessage(err); }
   finally { starring.value = false; }
 }
 
@@ -33,7 +33,7 @@ async function onReplay() {
     const replayed = await replay();
     await navigateTo(`/traces/${replayed.id}`);
   } catch (err) {
-    actionError.value = err instanceof Error ? err.message : String(err);
+    actionError.value = getErrorMessage(err);
     replaying.value = false;
   }
 }
@@ -50,7 +50,7 @@ async function onMenuSelect(action: string) {
       await remove();
       await navigateTo("/");
     } catch (err) {
-      actionError.value = err instanceof Error ? err.message : String(err);
+      actionError.value = getErrorMessage(err);
       deleting.value = false;
     }
   } else if (action === "copy-link") {
@@ -72,7 +72,7 @@ async function postNote() {
     notes.value = [note, ...notes.value];
     noteBody.value = "";
   } catch (err) {
-    actionError.value = err instanceof Error ? err.message : String(err);
+    actionError.value = getErrorMessage(err);
   } finally {
     postingNote.value = false;
   }
@@ -360,8 +360,8 @@ function downloadJson() {
               <!-- conversation messages -->
               <div
                 v-for="(msg, ci) in conversationMessages"
-                :key="msg.id"
                 :id="msg.id"
+                :key="msg.id"
                 class="msg"
                 :style="!systemMessages.length && ci === 0 ? 'border-top:0' : ''"
               >

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { UnifiedTrace, TraceProvider } from "@llm-lens/types";
+import type { UnifiedTrace, TraceProvider, TraceContentBlock } from "@llm-lens/types";
 
 definePageMeta({ layout: "app" });
 
@@ -9,7 +9,7 @@ function getSnippet(t: UnifiedTrace): string {
   const first = t.messages.find(m => m.role === "user");
   if (!first) return "";
   if (typeof first.content === "string") return first.content.slice(0, 140);
-  const block = (first.content as Array<{ type: string; text?: string }>).find(b => b.type === "text");
+  const block = (first.content as TraceContentBlock[]).find(b => b.type === "text");
   return block?.text?.slice(0, 140) ?? "";
 }
 
@@ -146,10 +146,10 @@ const bulkError = ref<string | null>(null);
 async function onRowMenuSelect(t: UnifiedTrace, action: string) {
   if (action === "delete") {
     try { await deleteOne(t.id); await fetchTraces(page.value.offset); }
-    catch (err) { bulkError.value = err instanceof Error ? err.message : String(err); }
+    catch (err) { bulkError.value = getErrorMessage(err); }
   } else if (action === "star") {
     try { await setStarred(t.id, !t.starred); await fetchTraces(page.value.offset); }
-    catch (err) { bulkError.value = err instanceof Error ? err.message : String(err); }
+    catch (err) { bulkError.value = getErrorMessage(err); }
   } else if (action === "copy-link") {
     navigator.clipboard?.writeText(`${window.location.origin}/traces/${t.id}`);
   }
@@ -162,7 +162,7 @@ async function deleteSelected() {
     selected.value = new Set();
     await fetchTraces(0);
   } catch (err) {
-    bulkError.value = err instanceof Error ? err.message : String(err);
+    bulkError.value = getErrorMessage(err);
   }
 }
 

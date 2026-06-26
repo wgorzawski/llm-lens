@@ -21,7 +21,7 @@ export function useTrace(id: string) {
     try {
       trace.value = await apiFetch<UnifiedTrace>(`/traces/${id}`);
     } catch (err) {
-      error.value = err instanceof Error ? err.message : String(err);
+      error.value = getErrorMessage(err);
     } finally {
       pending.value = false;
     }

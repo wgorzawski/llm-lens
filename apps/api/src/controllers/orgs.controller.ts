@@ -3,7 +3,7 @@ import type { FastifyReply, FastifyRequest } from "fastify";
 import { findUserById, updateUserOrgSlug } from "../db/users.repository.js";
 import { getOrg, upsertOrg, findOrgBySlugExcluding, type OrgUpdate } from "../db/orgs.repository.js";
 import {
-  ensureOwnerMembership,
+  getOrCreateOwnerMembership,
   listMembers,
   findMemberByEmail,
   findMemberById,
@@ -60,7 +60,7 @@ export class OrgsController {
   async listMine(request: FastifyRequest, reply: FastifyReply) {
     const user = await findUserById(request.user.userId);
     if (!user) return reply.status(404).send({ error: "User not found" });
-    await ensureOwnerMembership(user.org, user.id, user.email);
+    await getOrCreateOwnerMembership(user.org, user.id, user.email);
     return listMembers(user.org);
   }
 
@@ -78,7 +78,7 @@ export class OrgsController {
     if (!ROLES.includes(role)) return reply.status(400).send({ error: "Invalid role" });
     if (role === "owner") return reply.status(400).send({ error: "Cannot invite as owner" });
 
-    await ensureOwnerMembership(user.org, user.id, user.email);
+    await getOrCreateOwnerMembership(user.org, user.id, user.email);
     const existing = await findMemberByEmail(user.org, email);
     if (existing) return reply.status(409).send({ error: "This person is already a member or has a pending invite" });
 

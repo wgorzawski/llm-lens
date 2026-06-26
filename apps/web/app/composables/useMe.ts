@@ -25,13 +25,17 @@ export function useMe() {
   const { token } = useAuth();
 
   const me = useState<Me | null>("me", () => null);
+  const pending = ref(false);
 
   async function fetchMe() {
     if (!token.value) return;
+    pending.value = true;
     try {
       me.value = await apiFetch<Me>("/users/me");
     } catch {
       me.value = null;
+    } finally {
+      pending.value = false;
     }
   }
 
@@ -54,5 +58,5 @@ export function useMe() {
     return res.preferences;
   }
 
-  return { me, fetchMe, updateProfile, updatePassword, updatePreferences };
+  return { me, pending, fetchMe, updateProfile, updatePassword, updatePreferences };
 }

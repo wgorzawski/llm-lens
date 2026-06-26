@@ -64,7 +64,7 @@ async function saveProfile() {
     profileSaved.value = true;
     setTimeout(() => (profileSaved.value = false), 2000);
   } catch (err) {
-    profileError.value = err instanceof Error ? err.message : String(err);
+    profileError.value = getErrorMessage(err);
   } finally {
     savingProfile.value = false;
   }
@@ -89,7 +89,7 @@ async function startTwoFactorSetup() {
   try {
     totpSetup.value = await setupTwoFactor();
   } catch (err) {
-    totpError.value = err instanceof Error ? err.message : String(err);
+    totpError.value = getErrorMessage(err);
   } finally {
     totpBusy.value = false;
   }
@@ -105,7 +105,7 @@ async function confirmTwoFactorSetup() {
     totpVerifyCode.value = "";
     await fetchMe();
   } catch (err) {
-    totpError.value = err instanceof Error ? err.message : String(err);
+    totpError.value = getErrorMessage(err);
   } finally {
     totpBusy.value = false;
   }
@@ -120,7 +120,7 @@ async function confirmDisableTwoFactor() {
     showDisableForm.value = false;
     await fetchMe();
   } catch (err) {
-    totpError.value = err instanceof Error ? err.message : String(err);
+    totpError.value = getErrorMessage(err);
   } finally {
     totpBusy.value = false;
   }
@@ -134,7 +134,7 @@ async function regenerateCodes() {
     const { recoveryCodes } = await regenerateRecoveryCodes(code);
     revealedRecoveryCodes.value = recoveryCodes;
   } catch (err) {
-    totpError.value = err instanceof Error ? err.message : String(err);
+    totpError.value = getErrorMessage(err);
   }
 }
 
@@ -161,7 +161,7 @@ async function changePassword() {
     passwordSaved.value = true;
     setTimeout(() => (passwordSaved.value = false), 2000);
   } catch (err) {
-    passwordError.value = err instanceof Error ? err.message : String(err);
+    passwordError.value = getErrorMessage(err);
   } finally {
     savingPassword.value = false;
   }
@@ -215,7 +215,7 @@ async function testSlack() {
     });
     slackTestResult.value = res.ok ? "Test message sent." : `Slack responded with ${res.status}`;
   } catch (err) {
-    slackTestResult.value = err instanceof Error ? err.message : String(err);
+    slackTestResult.value = getErrorMessage(err);
   }
 }
 
@@ -262,7 +262,7 @@ async function saveOrg() {
     orgSaved.value = true;
     setTimeout(() => (orgSaved.value = false), 2000);
   } catch (err) {
-    orgError.value = err instanceof Error ? err.message : String(err);
+    orgError.value = getErrorMessage(err);
   } finally {
     savingOrg.value = false;
   }
@@ -288,7 +288,7 @@ async function submitInvite() {
     lastInviteUrl.value = result.inviteUrl;
     inviteEmail.value = "";
   } catch (err) {
-    inviteError.value = err instanceof Error ? err.message : String(err);
+    inviteError.value = getErrorMessage(err);
   } finally {
     inviting.value = false;
   }
@@ -448,7 +448,7 @@ const accentColors = [
                     <div class="set-row-hint">Shown in audit logs and comments.</div>
                   </div>
                   <div class="set-row-control">
-                    <div class="field-input"><input v-model="displayName" type="text" /></div>
+                    <div class="field-input"><input v-model="displayName" type="text" ></div>
                   </div>
                 </div>
 
@@ -460,7 +460,7 @@ const accentColors = [
                   <div class="set-row-control">
                     <div class="field-input">
                       <span class="lead" style="color:var(--text-3)">llmlens.dev/</span>
-                      <input v-model="handle" type="text" class="mono" />
+                      <input v-model="handle" type="text" class="mono" >
                     </div>
                   </div>
                 </div>
@@ -472,7 +472,7 @@ const accentColors = [
                   </div>
                   <div class="set-row-control">
                     <div class="field-input">
-                      <input :value="me?.email" readonly class="mono" />
+                      <input :value="me?.email" readonly class="mono" >
                       <span class="trail"><button class="link-btn">Change</button></span>
                     </div>
                   </div>
@@ -555,18 +555,18 @@ const accentColors = [
               <div class="set-section-body">
                 <div class="set-row">
                   <div class="set-row-label"><div class="set-row-label-text">Current password</div></div>
-                  <div class="set-row-control"><div class="field-input"><input v-model="currentPasswordInput" type="password" /></div></div>
+                  <div class="set-row-control"><div class="field-input"><input v-model="currentPasswordInput" type="password" ></div></div>
                 </div>
                 <div class="set-row">
                   <div class="set-row-label">
                     <div class="set-row-label-text">New password</div>
                     <div class="set-row-hint">Min 8 characters.</div>
                   </div>
-                  <div class="set-row-control"><div class="field-input"><input v-model="newPasswordInput" type="password" placeholder="Enter a new password" /></div></div>
+                  <div class="set-row-control"><div class="field-input"><input v-model="newPasswordInput" type="password" placeholder="Enter a new password" ></div></div>
                 </div>
                 <div class="set-row">
                   <div class="set-row-label"><div class="set-row-label-text">Confirm new password</div></div>
-                  <div class="set-row-control"><div class="field-input"><input v-model="confirmPasswordInput" type="password" placeholder="Repeat it" /></div></div>
+                  <div class="set-row-control"><div class="field-input"><input v-model="confirmPasswordInput" type="password" placeholder="Repeat it" ></div></div>
                 </div>
                 <div class="set-row-actions">
                   <span v-if="passwordError" class="set-error">{{ passwordError }}</span>
@@ -594,10 +594,10 @@ const accentColors = [
                 </div>
 
                 <div v-if="totpSetup" class="set-row" style="flex-direction:column;align-items:flex-start;gap:10px">
-                  <img :src="totpSetup.qrCode" alt="TOTP QR code" width="160" height="160" style="border-radius:6px" />
+                  <img :src="totpSetup.qrCode" alt="TOTP QR code" width="160" height="160" style="border-radius:6px" >
                   <div class="set-row-hint">Can't scan? Enter this code manually: <span class="mono">{{ totpSetup.secret }}</span></div>
                   <div style="display:flex;gap:8px;align-items:center">
-                    <div class="field-input"><input v-model="totpVerifyCode" placeholder="123456" @keydown.enter="confirmTwoFactorSetup" /></div>
+                    <div class="field-input"><input v-model="totpVerifyCode" placeholder="123456" @keydown.enter="confirmTwoFactorSetup" ></div>
                     <button class="s-btn primary" :disabled="totpBusy" @click="confirmTwoFactorSetup">Verify & enable</button>
                   </div>
                   <span v-if="totpError" class="set-error">{{ totpError }}</span>
@@ -606,7 +606,7 @@ const accentColors = [
                 <div v-if="showDisableForm" class="set-row" style="flex-direction:column;align-items:flex-start;gap:10px">
                   <div class="set-row-hint">Enter your current code or a recovery code to disable two-factor authentication.</div>
                   <div style="display:flex;gap:8px;align-items:center">
-                    <div class="field-input"><input v-model="disableCode" placeholder="123456" @keydown.enter="confirmDisableTwoFactor" /></div>
+                    <div class="field-input"><input v-model="disableCode" placeholder="123456" @keydown.enter="confirmDisableTwoFactor" ></div>
                     <button class="s-btn" :disabled="totpBusy" @click="confirmDisableTwoFactor">Confirm disable</button>
                   </div>
                   <span v-if="totpError" class="set-error">{{ totpError }}</span>
@@ -773,7 +773,7 @@ const accentColors = [
                   </div>
                   <div class="set-row-control" style="gap:8px">
                     <span v-if="slackConnected" class="kpill ok"><span class="dot ok" /> connected</span>
-                    <div class="field-input"><input v-model="slackWebhookUrl" type="text" placeholder="https://hooks.slack.com/services/…" class="mono" /></div>
+                    <div class="field-input"><input v-model="slackWebhookUrl" type="text" placeholder="https://hooks.slack.com/services/…" class="mono" ></div>
                     <button class="s-btn" :disabled="slackSaving" @click="saveSlackWebhook">{{ slackSaving ? "Saving…" : "Save" }}</button>
                     <button v-if="slackConnected" class="s-btn" @click="testSlack">Send test</button>
                     <button v-if="slackConnected" class="s-btn danger" @click="disconnectSlack">Disconnect</button>
@@ -898,7 +898,7 @@ const accentColors = [
               <div class="set-section-body">
                 <div class="set-row">
                   <div class="set-row-label"><div class="set-row-label-text">Organization name</div></div>
-                  <div class="set-row-control"><div class="field-input"><input v-model="orgName" type="text" /></div></div>
+                  <div class="set-row-control"><div class="field-input"><input v-model="orgName" type="text" ></div></div>
                 </div>
                 <div class="set-row">
                   <div class="set-row-label">
@@ -908,7 +908,7 @@ const accentColors = [
                   <div class="set-row-control">
                     <div class="field-input">
                       <span class="lead" style="color:var(--text-3)">llmlens.dev/</span>
-                      <input v-model="orgSlug" type="text" class="mono" />
+                      <input v-model="orgSlug" type="text" class="mono" >
                     </div>
                   </div>
                 </div>
@@ -983,7 +983,7 @@ const accentColors = [
                     <div v-if="inviteError" class="set-error">{{ inviteError }}</div>
                   </div>
                   <div class="set-row-control" style="gap:8px">
-                    <div class="field-input"><input v-model="inviteEmail" type="email" placeholder="teammate@company.com" @keydown.enter="submitInvite" /></div>
+                    <div class="field-input"><input v-model="inviteEmail" type="email" placeholder="teammate@company.com" @keydown.enter="submitInvite" ></div>
                     <select v-model="inviteRole" class="field-input">
                       <option v-for="r in memberRoles" :key="r" :value="r">{{ r }}</option>
                     </select>
@@ -993,7 +993,7 @@ const accentColors = [
                 <div v-if="lastInviteUrl" class="set-row">
                   <div class="set-row-label"><div class="set-row-label-text">Invite link — share this with the invitee</div></div>
                   <div class="set-row-control" style="gap:8px">
-                    <div class="field-input"><input :value="lastInviteUrl" readonly class="mono" /></div>
+                    <div class="field-input"><input :value="lastInviteUrl" readonly class="mono" ></div>
                     <button class="s-btn" @click="copyInviteLink">Copy</button>
                   </div>
                 </div>
@@ -1117,7 +1117,7 @@ const accentColors = [
                 </div>
                 <div class="set-row">
                   <div class="set-row-label"><div class="set-row-label-text">Billing email</div></div>
-                  <div class="set-row-control"><div class="field-input"><input value="wojtek@example.com" readonly class="mono" /></div></div>
+                  <div class="set-row-control"><div class="field-input"><input value="wojtek@example.com" readonly class="mono" ></div></div>
                 </div>
                 <div class="set-row">
                   <div class="set-row-label"><div class="set-row-label-text">Invoices</div></div>
@@ -1204,7 +1204,7 @@ const accentColors = [
               <div class="set-section-body">
                 <div class="set-row">
                   <div class="set-row-label"><div class="set-row-label-text">Domain</div></div>
-                  <div class="set-row-control"><div class="field-input"><input type="text" placeholder="lens.yumio.fun" class="mono" /></div></div>
+                  <div class="set-row-control"><div class="field-input"><input type="text" placeholder="lens.yumio.fun" class="mono" ></div></div>
                 </div>
                 <div class="set-row">
                   <div class="set-row-label">

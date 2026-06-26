@@ -22,7 +22,7 @@ export function useApiKeys() {
     try {
       keys.value = await apiFetch<ApiKey[]>("/keys");
     } catch (err) {
-      error.value = err instanceof Error ? err.message : String(err);
+      error.value = getErrorMessage(err);
     } finally {
       pending.value = false;
     }

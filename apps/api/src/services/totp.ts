@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { authenticator } from "otplib";
+import { DEFAULT_RECOVERY_CODE_COUNT } from "../constants.js";
 
 export function generateTotpSecret(): string {
   return authenticator.generateSecret();
@@ -21,7 +22,7 @@ export function hashRecoveryCode(code: string): string {
   return crypto.createHash("sha256").update(code).digest("hex");
 }
 
-export function generateRecoveryCodes(count = 10): string[] {
+export function generateRecoveryCodes(count = DEFAULT_RECOVERY_CODE_COUNT): string[] {
   return Array.from({ length: count }, () =>
     crypto.randomBytes(5).toString("hex").match(/.{1,5}/g)!.join("-")
   );

@@ -420,6 +420,10 @@
       gap: 56px;
       align-items: center;
     }
+    .step-visual,
+    .step-content {
+      min-width: 0;
+    }
     .step:nth-child(even) .step-visual {
       order: -1;
     }
@@ -456,6 +460,8 @@
       font-size: 13px;
       line-height: 1.65;
       box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+      min-width: 0;
+      max-width: 100%;
     }
     .code-header {
       display: flex;
@@ -723,6 +729,9 @@
       gap: 24px;
       margin-top: 48px;
       align-items: start;
+    }
+    .qs-grid > * {
+      min-width: 0;
     }
     .qs-label {
       font-family: var(--font-mono);

@@ -2,6 +2,7 @@ import "reflect-metadata";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import jwt from "@fastify/jwt";
+import rateLimit from "@fastify/rate-limit";
 import oauth2Plugin, { type OAuth2Namespace } from "@fastify/oauth2";
 import { bootstrap } from "fastify-decorators";
 import { initDb } from "./db/index.js";
@@ -12,7 +13,7 @@ import { UsersController } from "./controllers/users.controller.js";
 import { SessionsController } from "./controllers/sessions.controller.js";
 import { OrgsController } from "./controllers/orgs.controller.js";
 import { ExportController } from "./controllers/export.controller.js";
-import { findOrCreateOAuthUser } from "./db/users.repository.js";
+import { findUserById } from "./db/users.repository.js";
 import { hashKey, findApiKeyByHash, touchApiKey } from "./db/api-keys.repository.js";
 import { enforceRetention } from "./services/retention.js";
 import { RETENTION_CHECK_INTERVAL_MS } from "./constants.js";
@@ -27,9 +28,9 @@ declare module "fastify" {
 const server = Fastify({ logger: true });
 
 const apiUrl = process.env["API_URL"] ?? "http://localhost:3001";
-const frontendUrl = process.env["FRONTEND_URL"] ?? "http://localhost:3000";
 
 await server.register(cors, { origin: true, methods: ["GET", "HEAD", "POST", "PATCH", "PUT", "DELETE"] });
+await server.register(rateLimit, { global: false });
 const jwtSecret = process.env["JWT_SECRET"];
 if (!jwtSecret) throw new Error("JWT_SECRET environment variable is required");
 
@@ -78,12 +79,13 @@ server.addHook("preHandler", async (request, reply) => {
 
   const authHeader = request.headers.authorization;
   if (authHeader?.startsWith("Bearer llmlens_sk_")) {
-    const token = authHeader.slice("Bearer ".length);
-    const key = await findApiKeyByHash(hashKey(token));
+    const rawKey = authHeader.slice("Bearer ".length);
+    const key = await findApiKeyByHash(hashKey(rawKey));
     if (!key) return reply.status(401).send({ error: "Invalid API key" });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (request as any).user = { userId: key.userId, email: "" };
-    void touchApiKey(key.id);
+    const user = await findUserById(key.userId);
+    if (!user) return reply.status(401).send({ error: "Invalid API key" });
+    request.user = { userId: user.id, email: user.email };
+    void touchApiKey(key.id).catch(() => { /* non-critical */ });
     return;
   }
 
@@ -103,47 +105,16 @@ await server.register(bootstrap, {
   ],
 });
 
+// Normalize all unhandled errors to { error: string } so clients always get
+// a consistent shape regardless of which plugin or hook threw.
+server.setErrorHandler((err: { statusCode?: number; message: string }, _request, reply) => {
+  const status = err.statusCode ?? 500;
+  const message = status < 500 ? err.message : "Internal server error";
+  if (status >= 500) server.log.error(err);
+  return reply.status(status).send({ error: message });
+});
+
 server.get("/health", async () => ({ status: "ok" }));
-
-
-server.get("/api/auth/google/callback", async (request, reply) => {
-  const tokenSet = await server.googleOAuth2.getAccessTokenFromAuthorizationCodeFlow(request, reply);
-  const profile = await fetch("https://www.googleapis.com/userinfo/v2/me", {
-    headers: { Authorization: `Bearer ${tokenSet.token.access_token}` },
-  }).then((r) => r.json() as Promise<{ id: string; email: string }>);
-
-  const user = await findOrCreateOAuthUser(profile.email, "google", profile.id);
-  const token = server.jwt.sign({ userId: user.id, email: user.email });
-  return reply.redirect(`${frontendUrl}/auth/callback?token=${token}`);
-});
-
-server.get("/api/auth/github/callback", async (request, reply) => {
-  const tokenSet = await server.githubOAuth2.getAccessTokenFromAuthorizationCodeFlow(request, reply);
-
-  const ghHeaders = {
-    Authorization: `Bearer ${tokenSet.token.access_token}`,
-    Accept: "application/json",
-    "User-Agent": "llm-lens",
-  };
-
-  const profile = await fetch("https://api.github.com/user", { headers: ghHeaders })
-    .then((r) => r.json() as Promise<{ id: number; email: string | null }>);
-
-  let email = profile.email;
-  if (!email) {
-    const emails = await fetch("https://api.github.com/user/emails", { headers: ghHeaders })
-      .then((r) => r.json() as Promise<Array<{ email: string; primary: boolean; verified: boolean }>>);
-    email = emails.find((e) => e.primary && e.verified)?.email ?? null;
-  }
-
-  if (!email) {
-    return reply.redirect(`${frontendUrl}/login?error=no_email`);
-  }
-
-  const user = await findOrCreateOAuthUser(email, "github", String(profile.id));
-  const token = server.jwt.sign({ userId: user.id, email: user.email });
-  return reply.redirect(`${frontendUrl}/auth/callback?token=${token}`);
-});
 
 await initDb();
 

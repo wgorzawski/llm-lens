@@ -44,7 +44,7 @@ export function useTraces(opts?: {
     try {
       page.value = await apiFetch<TracesPage>(`/traces?${params}`);
     } catch (err) {
-      error.value = err instanceof Error ? err.message : String(err);
+      error.value = getErrorMessage(err);
     } finally {
       pending.value = false;
     }

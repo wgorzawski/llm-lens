@@ -18,7 +18,7 @@ async function onCreateKey() {
     newKeyName.value = "";
     createdKey.value = { id: result.id, name: result.name, key: result.key };
   } catch (err) {
-    keyError.value = err instanceof Error ? err.message : String(err);
+    keyError.value = getErrorMessage(err);
   } finally {
     creatingKey.value = false;
   }
@@ -27,7 +27,7 @@ async function onCreateKey() {
 async function onRevokeKey(id: string) {
   keyError.value = null;
   try { await revokeKey(id); }
-  catch (err) { keyError.value = err instanceof Error ? err.message : String(err); }
+  catch (err) { keyError.value = getErrorMessage(err); }
 }
 
 function copyKey(val: string) {
@@ -68,7 +68,7 @@ function fmtDate(ts: number | string | null) {
         placeholder="Key name (e.g. production)"
         :disabled="creatingKey"
         @keydown.enter="onCreateKey"
-      />
+      >
       <button class="create-btn" :disabled="creatingKey || !newKeyName.trim()" @click="onCreateKey">
         {{ creatingKey ? "Creating…" : "+ Create key" }}
       </button>

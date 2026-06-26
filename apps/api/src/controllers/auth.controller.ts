@@ -1,8 +1,8 @@
-import { Controller, POST } from "fastify-decorators";
+import { Controller, GET, POST } from "fastify-decorators";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import bcrypt from "bcryptjs";
-import { createUser, findUserByEmail, findUserById, consumeRecoveryCode } from "../db/users.repository.js";
-import { BCRYPT_ROUNDS, PENDING_2FA_TOKEN_TTL } from "../constants.js";
+import { createUser, findUserByEmail, findUserById, findOrCreateOAuthUser, consumeRecoveryCode } from "../db/users.repository.js";
+import { BCRYPT_ROUNDS, PENDING_2FA_TOKEN_TTL, OAUTH_FETCH_TIMEOUT_MS } from "../constants.js";
 import { createSession } from "../db/sessions.repository.js";
 import { verifyTotpCode, hashRecoveryCode } from "../services/totp.js";
 
@@ -20,9 +20,14 @@ function deviceFromUserAgent(ua: string): string {
   return "Unknown device";
 }
 
+const AUTH_RATE_LIMIT = {
+  max: parseInt(process.env["AUTH_RATE_LIMIT_MAX"] ?? "10", 10),
+  timeWindow: "1 minute",
+};
+
 @Controller("/auth")
 export class AuthController {
-  @POST("/register")
+  @POST("/register", { config: { rateLimit: AUTH_RATE_LIMIT } })
   async register(
     request: FastifyRequest<{ Body: { email: string; password: string } }>,
     reply: FastifyReply
@@ -46,11 +51,12 @@ export class AuthController {
 
     const token = request.server.jwt.sign({ userId: user.id, email: user.email });
     const ua = request.headers["user-agent"] ?? "unknown";
-    void createSession(user.id, deviceFromUserAgent(ua), request.ip, ua);
+    void createSession(user.id, deviceFromUserAgent(ua), request.ip, ua)
+      .catch((err: unknown) => request.server.log.warn({ err }, "Failed to create session"));
     return reply.status(201).send({ token, user });
   }
 
-  @POST("/login")
+  @POST("/login", { config: { rateLimit: AUTH_RATE_LIMIT } })
   async login(
     request: FastifyRequest<{ Body: { email: string; password: string } }>,
     reply: FastifyReply
@@ -81,7 +87,8 @@ export class AuthController {
 
     const token = request.server.jwt.sign({ userId: user.id, email: user.email });
     const ua = request.headers["user-agent"] ?? "unknown";
-    void createSession(user.id, deviceFromUserAgent(ua), request.ip, ua);
+    void createSession(user.id, deviceFromUserAgent(ua), request.ip, ua)
+      .catch((err: unknown) => request.server.log.warn({ err }, "Failed to create session"));
     return { token, user: { id: user.id, email: user.email } };
   }
 
@@ -117,7 +124,75 @@ export class AuthController {
 
     const token = request.server.jwt.sign({ userId: user.id, email: user.email });
     const ua = request.headers["user-agent"] ?? "unknown";
-    void createSession(user.id, deviceFromUserAgent(ua), request.ip, ua);
+    void createSession(user.id, deviceFromUserAgent(ua), request.ip, ua)
+      .catch((err: unknown) => request.server.log.warn({ err }, "Failed to create session"));
     return { token, user: { id: user.id, email: user.email } };
+  }
+
+  // ── OAuth callbacks ─────────────────────────────────────────────────────────
+  // These live here rather than in index.ts because they contain auth business
+  // logic (user creation, JWT signing) — not just routing configuration.
+
+  @GET("/google/callback")
+  async googleCallback(request: FastifyRequest, reply: FastifyReply) {
+    const frontendUrl = process.env["FRONTEND_URL"] ?? "http://localhost:3000";
+    const tokenSet = await request.server.googleOAuth2.getAccessTokenFromAuthorizationCodeFlow(request, reply);
+
+    const profile = await fetchWithTimeout<{ id: string; email: string }>(
+      "https://www.googleapis.com/userinfo/v2/me",
+      { headers: { Authorization: `Bearer ${tokenSet.token.access_token}` } },
+    );
+    if (!profile?.email) return reply.redirect(`${frontendUrl}/login?error=no_email`);
+
+    const user = await findOrCreateOAuthUser(profile.email, "google", profile.id);
+    const token = request.server.jwt.sign({ userId: user.id, email: user.email });
+    return reply.redirect(`${frontendUrl}/auth/callback?token=${token}`);
+  }
+
+  @GET("/github/callback")
+  async githubCallback(request: FastifyRequest, reply: FastifyReply) {
+    const frontendUrl = process.env["FRONTEND_URL"] ?? "http://localhost:3000";
+    const tokenSet = await request.server.githubOAuth2.getAccessTokenFromAuthorizationCodeFlow(request, reply);
+
+    const ghHeaders = {
+      Authorization: `Bearer ${tokenSet.token.access_token}`,
+      Accept: "application/json",
+      "User-Agent": "llm-lens",
+    };
+
+    const profile = await fetchWithTimeout<{ id: number; email: string | null }>(
+      "https://api.github.com/user",
+      { headers: ghHeaders },
+    );
+
+    let email = profile?.email ?? null;
+    if (!email) {
+      const emails = await fetchWithTimeout<Array<{ email: string; primary: boolean; verified: boolean }>>(
+        "https://api.github.com/user/emails",
+        { headers: ghHeaders },
+      );
+      email = emails?.find((e) => e.primary && e.verified)?.email ?? null;
+    }
+
+    if (!email) return reply.redirect(`${frontendUrl}/login?error=no_email`);
+
+    const user = await findOrCreateOAuthUser(email, "github", String(profile?.id));
+    const token = request.server.jwt.sign({ userId: user.id, email: user.email });
+    return reply.redirect(`${frontendUrl}/auth/callback?token=${token}`);
+  }
+}
+
+// Fetch with a hard timeout so OAuth provider slowness doesn't hang the server.
+async function fetchWithTimeout<T>(url: string, init?: RequestInit): Promise<T | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), OAUTH_FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, { ...init, signal: controller.signal });
+    if (!res.ok) return null;
+    return res.json() as Promise<T>;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
   }
 }
