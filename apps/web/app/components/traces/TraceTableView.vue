@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { UnifiedTrace } from "@llm-lens/types";
 
-const props = defineProps<{
+defineProps<{
   traces: UnifiedTrace[];
   selected: Set<string>;
   pending: boolean;

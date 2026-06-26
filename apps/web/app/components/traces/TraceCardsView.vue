@@ -2,7 +2,7 @@
 import type { UnifiedTrace } from "@llm-lens/types";
 import { extractMessageSnippet } from "@llm-lens/parsers";
 
-const props = defineProps<{
+defineProps<{
   traces: UnifiedTrace[];
   selected: Set<string>;
   pending: boolean;

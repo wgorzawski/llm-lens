@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import type { MemberRole, OrgMember } from "~/composables/useOrgMembers";
 
-const { me } = useMe();
 const { members, inviteMember, updateRole, removeMember } = useOrgMembers();
 
 const memberRoles: MemberRole[] = ["admin", "member", "viewer"];
@@ -11,7 +10,6 @@ const inviting = ref(false);
 const inviteError = ref<string | null>(null);
 const lastInviteUrl = ref<string | null>(null);
 
-const myRole = computed(() => members.value.find((m) => m.email === me.value?.email)?.role ?? "owner");
 
 async function submitInvite() {
   if (!inviteEmail.value.trim()) return;
