@@ -84,7 +84,7 @@ export async function initDb(): Promise<void> {
       user_id      TEXT    NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       name         TEXT    NOT NULL,
       key_hash     TEXT    NOT NULL UNIQUE,
-      last_used_at TEXT,
+      last_used_at INTEGER,
       created_at   INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000)
     )
   `);
@@ -95,7 +95,7 @@ export async function initDb(): Promise<void> {
       trace_id   TEXT NOT NULL,
       user_id    TEXT NOT NULL,
       body       TEXT NOT NULL,
-      created_at TEXT NOT NULL
+      created_at INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000)
     )
   `);
   await client.execute(
@@ -104,13 +104,13 @@ export async function initDb(): Promise<void> {
 
   await client.execute(`
     CREATE TABLE IF NOT EXISTS sessions (
-      id              TEXT NOT NULL PRIMARY KEY,
-      user_id         TEXT NOT NULL,
-      device          TEXT NOT NULL,
-      ip              TEXT NOT NULL,
-      user_agent      TEXT NOT NULL,
-      created_at      TEXT NOT NULL,
-      last_active_at  TEXT NOT NULL
+      id              TEXT    NOT NULL PRIMARY KEY,
+      user_id         TEXT    NOT NULL,
+      device          TEXT    NOT NULL,
+      ip              TEXT    NOT NULL,
+      user_agent      TEXT    NOT NULL,
+      created_at      INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000),
+      last_active_at  INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000)
     )
   `);
   await client.execute(

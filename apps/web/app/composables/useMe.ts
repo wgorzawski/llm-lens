@@ -25,18 +25,11 @@ export function useMe() {
   const { token } = useAuth();
 
   const me = useState<Me | null>("me", () => null);
-  const pending = ref(false);
+  const { pending, run } = useRequest();
 
   async function fetchMe() {
     if (!token.value) return;
-    pending.value = true;
-    try {
-      me.value = await apiFetch<Me>("/users/me");
-    } catch {
-      me.value = null;
-    } finally {
-      pending.value = false;
-    }
+    me.value = (await run(() => apiFetch<Me>("/users/me"))) ?? null;
   }
 
   async function updateProfile(update: ProfileUpdate): Promise<Me> {

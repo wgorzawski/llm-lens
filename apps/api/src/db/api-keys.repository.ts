@@ -5,7 +5,7 @@ import { db, apiKeys } from "./index.js";
 export interface ApiKeyPublic {
   id: string;
   name: string;
-  lastUsedAt: string | null;
+  lastUsedAt: number | null;
   createdAt: number;
 }
 
@@ -54,7 +54,7 @@ export async function findApiKeyByHash(hash: string) {
 export async function touchApiKey(id: string): Promise<void> {
   await db
     .update(apiKeys)
-    .set({ lastUsedAt: new Date().toISOString() })
+    .set({ lastUsedAt: Date.now() })
     .where(eq(apiKeys.id, id));
 }
 

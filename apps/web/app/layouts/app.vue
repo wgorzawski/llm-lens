@@ -25,17 +25,13 @@ function fmtN(n: number) {
 }
 
 const sidebarItems1 = [
-  { id: "traces",    label: "Traces",         icon: "activity",  to: "/" },
-  { id: "dashboard", label: "Dashboard",      icon: "dashboard", to: null },
-  { id: "compare",   label: "Compare & diff", icon: "diff",      to: null },
-  { id: "replays",   label: "Replays",        icon: "replay",    to: null },
+  { id: "traces",  label: "Traces",         icon: "activity", to: "/" },
+  { id: "compare", label: "Compare & diff", icon: "diff",     to: "/traces/diff" },
 ] as const;
 
 const sidebarItems2 = [
-  { id: "keys",       label: "API keys",        icon: "key",      to: "/keys" },
-  { id: "instrument", label: "Instrumentation", icon: "tool",     to: null },
-  { id: "docs",       label: "Docs",            icon: "docs",     to: null },
-  { id: "settings",   label: "Settings",        icon: "settings", to: "/settings" },
+  { id: "keys",     label: "API keys", icon: "key",      to: "/keys" },
+  { id: "settings", label: "Settings", icon: "settings", to: "/settings" },
 ] as const;
 
 function onItemClick(to: string | null) {

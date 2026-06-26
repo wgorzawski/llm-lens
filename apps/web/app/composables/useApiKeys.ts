@@ -1,7 +1,7 @@
 export interface ApiKey {
   id: string;
   name: string;
-  lastUsedAt: string | null;
+  lastUsedAt: number | null;
   createdAt: number;
 }
 
@@ -13,19 +13,11 @@ export function useApiKeys() {
   const { apiFetch } = useApiFetch();
 
   const keys = ref<ApiKey[]>([]);
-  const pending = ref(false);
-  const error = ref<string | null>(null);
+  const { pending, error, run } = useRequest();
 
   async function fetchKeys() {
-    pending.value = true;
-    error.value = null;
-    try {
-      keys.value = await apiFetch<ApiKey[]>("/keys");
-    } catch (err) {
-      error.value = getErrorMessage(err);
-    } finally {
-      pending.value = false;
-    }
+    const result = await run(() => apiFetch<ApiKey[]>("/keys"));
+    if (result) keys.value = result;
   }
 
   async function createKey(name: string): Promise<CreatedApiKey> {

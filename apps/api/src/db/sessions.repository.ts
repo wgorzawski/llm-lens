@@ -2,7 +2,7 @@ import { eq, and, desc } from "drizzle-orm";
 import { db, sessions } from "./index.js";
 
 export async function createSession(userId: string, device: string, ip: string, userAgent: string) {
-  const now = new Date().toISOString();
+  const now = Date.now();
   const session = { id: crypto.randomUUID(), userId, device, ip, userAgent, createdAt: now, lastActiveAt: now };
   await db.insert(sessions).values(session);
   return session;

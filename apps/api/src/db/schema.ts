@@ -42,7 +42,7 @@ export const apiKeys = sqliteTable("api_keys", {
   userId: text("user_id").notNull().references(() => users.id),
   name: text("name").notNull(),
   keyHash: text("key_hash").notNull().unique(),
-  lastUsedAt: text("last_used_at"),
+  lastUsedAt: integer("last_used_at"),
   createdAt: integer("created_at").notNull().default(sql`(unixepoch('now') * 1000)`),
 });
 
@@ -51,7 +51,7 @@ export const traceNotes = sqliteTable("trace_notes", {
   traceId: text("trace_id").notNull(),
   userId: text("user_id").notNull(),
   body: text("body").notNull(),
-  createdAt: text("created_at").notNull(),
+  createdAt: integer("created_at").notNull().default(sql`(unixepoch('now') * 1000)`),
 });
 
 export const sessions = sqliteTable("sessions", {
@@ -60,8 +60,8 @@ export const sessions = sqliteTable("sessions", {
   device: text("device").notNull(),
   ip: text("ip").notNull(),
   userAgent: text("user_agent").notNull(),
-  createdAt: text("created_at").notNull(),
-  lastActiveAt: text("last_active_at").notNull(),
+  createdAt: integer("created_at").notNull().default(sql`(unixepoch('now') * 1000)`),
+  lastActiveAt: integer("last_active_at").notNull().default(sql`(unixepoch('now') * 1000)`),
 });
 
 export const orgs = sqliteTable("orgs", {

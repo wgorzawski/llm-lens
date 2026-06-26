@@ -90,6 +90,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@llm-lens/parsers':
+        specifier: workspace:*
+        version: link:../../packages/parsers
       '@llm-lens/types':
         specifier: workspace:*
         version: link:../../packages/types

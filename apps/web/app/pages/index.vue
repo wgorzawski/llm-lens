@@ -1,17 +1,11 @@
 <script setup lang="ts">
-import type { UnifiedTrace, TraceProvider, TraceContentBlock } from "@llm-lens/types";
+import type { UnifiedTrace, TraceProvider } from "@llm-lens/types";
+
+const SEARCH_DEBOUNCE_MS = 300;
 
 definePageMeta({ layout: "app" });
 
 // ── helpers ───────────────────────────────────────────────────────────────────
-
-function getSnippet(t: UnifiedTrace): string {
-  const first = t.messages.find(m => m.role === "user");
-  if (!first) return "";
-  if (typeof first.content === "string") return first.content.slice(0, 140);
-  const block = (first.content as TraceContentBlock[]).find(b => b.type === "text");
-  return block?.text?.slice(0, 140) ?? "";
-}
 
 const RANGE_MS: Record<string, number> = {
   "15m": 15 * 60 * 1000,
@@ -57,7 +51,7 @@ let searchDebounce: ReturnType<typeof setTimeout> | undefined;
 const debouncedQuery = ref("");
 watch(searchQuery, (v) => {
   if (searchDebounce) clearTimeout(searchDebounce);
-  searchDebounce = setTimeout(() => { debouncedQuery.value = v.trim(); }, 300);
+  searchDebounce = setTimeout(() => { debouncedQuery.value = v.trim(); }, SEARCH_DEBOUNCE_MS);
 });
 
 // ── data ─────────────────────────────────────────────────────────────────────
@@ -225,10 +219,6 @@ const sortOptions = [
   { id: "tokens",  label: "Tokens (desc)" },
 ];
 
-// skeleton rows
-const SKEL_LIST = Array.from({ length: 12 });
-const SKEL_TABLE = Array.from({ length: 14 });
-const SKEL_CARDS = Array.from({ length: 9 });
 </script>
 
 <template>
@@ -377,332 +367,37 @@ const SKEL_CARDS = Array.from({ length: 9 });
         <div v-if="error" class="error-strip">{{ error }}</div>
 
         <!-- ── LIST VIEW ── -->
-        <template v-if="variant === 'list'">
-          <div class="list">
-            <div class="list-row head">
-              <div />
-              <div>Provider</div>
-              <div>Trace</div>
-              <div>Last prompt</div>
-              <div>In</div>
-              <div>Out</div>
-              <div>Latency</div>
-              <div>Cost</div>
-              <div>Msgs</div>
-              <div style="text-align:right">Time</div>
-              <div />
-            </div>
-
-            <!-- skeleton -->
-            <template v-if="pending">
-              <div v-for="(_, i) in SKEL_LIST" :key="i" class="list-row">
-                <div class="sk box" style="width:14px;height:14px" />
-                <div class="sk pill" style="width:70px" />
-                <div class="col-title" style="gap:4px">
-                  <div class="sk line" style="width:55%" />
-                  <div class="sk line sm" style="width:35%" />
-                </div>
-                <div class="sk line" style="width:65%" />
-                <div class="sk line" style="width:30px" />
-                <div class="sk line" style="width:24px" />
-                <div class="sk line" style="width:44px" />
-                <div class="sk line" style="width:40px" />
-                <div class="sk line" style="width:18px" />
-                <div class="sk line" style="width:52px;margin-left:auto" />
-                <div />
-              </div>
-            </template>
-
-            <!-- actual rows -->
-            <template v-else>
-              <div
-                v-for="t in traces" :key="t.id"
-                class="list-row"
-                :class="{ selected: selected.has(t.id) }"
-                @click="handleRowClick(t.id)"
-              >
-                <div
-                  class="cbox" :class="{ on: selected.has(t.id) }"
-                  @click.stop="toggleSelect(t.id)"
-                />
-                <div>
-                  <span :class="`prov prov-${t.metadata.provider}`">{{ t.metadata.provider }}</span>
-                </div>
-                <div class="col-title">
-                  <span class="t1">{{ traceName(t) }}</span>
-                  <span class="t2">{{ t.metadata.model }} · <span style="color:var(--text-3)">{{ t.id.slice(-8) }}</span></span>
-                </div>
-                <div class="col-snippet">
-                  <span class="markers" style="margin-right:6px">
-                    <span v-if="hasSystem(t)" class="marker sys">SYS</span>
-                    <span v-if="toolCallCount(t) > 0" class="marker tool">
-                      <AppIcon name="tool" :size="9" />{{ toolCallCount(t) }}
-                    </span>
-                  </span>
-                  {{ getSnippet(t) }}
-                </div>
-                <div class="col-msg">
-                  <AppIcon name="up" :size="9" /> {{ fmtN(t.usage.inputTokens) }}
-                </div>
-                <div class="col-msg">
-                  <AppIcon name="down" :size="9" /> {{ fmtN(t.usage.outputTokens) }}
-                </div>
-                <div class="col-msg lat" :class="latClass(t.metadata.durationMs)">
-                  <span
-                    class="dot"
-                    :class="latClass(t.metadata.durationMs) || 'ok'"
-                    style="margin-right:4px"
-                  />
-                  {{ fmtMs(t.metadata.durationMs) }}
-                </div>
-                <div class="col-msg" style="color:var(--success)">{{ fmtUsd(t.metadata.costUsd) }}</div>
-                <div class="col-msg" style="color:var(--text-2)">{{ t.messages.length }}</div>
-                <div class="col-date">{{ getRelative(t.timestamp) }}</div>
-                <div class="col-actions">
-                  <ActionMenu
-                    :items="[
-                      { id: 'star', label: t.starred ? 'Unstar' : 'Star', icon: 'star' },
-                      { id: 'copy-link', label: 'Copy link', icon: 'note' },
-                      { id: 'delete', label: 'Delete', icon: 'trash', danger: true },
-                    ]"
-                    @select="onRowMenuSelect(t, $event)"
-                  >
-                    <button class="action-btn" title="More"><AppIcon name="more" :size="12" /></button>
-                  </ActionMenu>
-                </div>
-              </div>
-            </template>
-          </div>
-        </template>
+        <TraceListView
+          v-if="variant === 'list'"
+          :traces="traces"
+          :selected="selected"
+          :pending="pending"
+          @toggle-select="toggleSelect"
+          @row-click="handleRowClick"
+          @row-menu-select="onRowMenuSelect"
+        />
 
         <!-- ── TABLE VIEW ── -->
-        <template v-else-if="variant === 'table'">
-          <div class="table-wrap">
-            <table class="tbl">
-              <thead>
-                <tr>
-                  <th style="width:28px"><div class="cbox" style="opacity:.6" /></th>
-                  <th style="width:90px">ID</th>
-                  <th style="width:82px">Provider</th>
-                  <th>Trace · model</th>
-                  <th>Last prompt</th>
-                  <th class="num" style="width:52px">In</th>
-                  <th class="num" style="width:52px">Out</th>
-                  <th class="num" style="width:58px">$</th>
-                  <th style="width:110px">Latency</th>
-                  <th class="num" style="width:42px">Msg</th>
-                  <th style="width:52px">Status</th>
-                  <th style="width:80px;text-align:right">Time</th>
-                </tr>
-              </thead>
-              <tbody>
-                <!-- skeleton -->
-                <template v-if="pending">
-                  <tr v-for="(_, i) in SKEL_TABLE" :key="i">
-                    <td><div class="sk box" style="width:14px;height:14px" /></td>
-                    <td><div class="sk line sm" style="width:60px" /></td>
-                    <td><div class="sk pill" style="width:50px" /></td>
-                    <td>
-                      <div class="sk line" style="width:55%;margin-bottom:4px" />
-                      <div class="sk line sm" style="width:35%" />
-                    </td>
-                    <td><div class="sk line" style="width:60%" /></td>
-                    <td><div class="sk line sm" style="width:26px;margin-left:auto" /></td>
-                    <td><div class="sk line sm" style="width:22px;margin-left:auto" /></td>
-                    <td><div class="sk line sm" style="width:34px;margin-left:auto" /></td>
-                    <td><div class="sk line" style="width:55%" /></td>
-                    <td><div class="sk line sm" style="width:18px;margin-left:auto" /></td>
-                    <td><div class="sk pill" style="width:38px" /></td>
-                    <td><div class="sk line sm" style="width:42px;margin-left:auto" /></td>
-                  </tr>
-                </template>
-
-                <!-- actual rows -->
-                <template v-else>
-                  <tr
-                    v-for="t in traces" :key="t.id"
-                    :class="{ selected: selected.has(t.id) }"
-                    @click="handleRowClick(t.id)"
-                  >
-                    <td>
-                      <div
-                        class="cbox" :class="{ on: selected.has(t.id) }"
-                        @click.stop="toggleSelect(t.id)"
-                      />
-                    </td>
-                    <td class="col-id">{{ t.id.slice(-8) }}</td>
-                    <td>
-                      <span :class="`prov prov-${t.metadata.provider}`" style="padding:1px 5px;font-size:9px">
-                        {{ t.metadata.provider }}
-                      </span>
-                    </td>
-                    <td class="col-name">
-                      <div style="display:flex;flex-direction:column;line-height:1.3">
-                        <span style="color:var(--text-0)">{{ traceName(t) }}</span>
-                        <span class="mono" style="color:var(--text-2);font-size:10px">{{ t.metadata.model }}</span>
-                      </div>
-                    </td>
-                    <td class="col-snippet">
-                      <span v-if="toolCallCount(t) > 0" class="marker tool" style="margin-right:4px">
-                        <AppIcon name="tool" :size="9" />{{ toolCallCount(t) }}
-                      </span>
-                      {{ getSnippet(t) }}
-                    </td>
-                    <td class="num" style="color:var(--text-1)">{{ fmtN(t.usage.inputTokens) }}</td>
-                    <td class="num" style="color:var(--text-1)">{{ fmtN(t.usage.outputTokens) }}</td>
-                    <td class="num" style="color:var(--success)">{{ fmtUsd(t.metadata.costUsd) }}</td>
-                    <td>
-                      <span
-                        class="latbar"
-                        :class="latClass(t.metadata.durationMs)"
-                        :style="{ width: Math.max(4, Math.min(60, (t.metadata.durationMs ?? 0) / 250)) + 'px' }"
-                      />
-                      <span
-                        class="mono"
-                        :style="{
-                          color: latClass(t.metadata.durationMs) === 'slow' ? 'var(--danger)' :
-                                 latClass(t.metadata.durationMs) === 'warn' ? 'var(--warn)' : 'var(--text-1)',
-                          fontSize: '11px'
-                        }"
-                      >{{ fmtMs(t.metadata.durationMs) }}</span>
-                    </td>
-                    <td class="num" style="color:var(--text-2)">{{ t.messages.length }}</td>
-                    <td>
-                      <span
-                        class="dot"
-                        :class="latClass(t.metadata.durationMs) || 'ok'"
-                        style="margin-right:5px"
-                      />
-                      <span class="mono" style="font-size:10px;color:var(--text-2)">
-                        {{ latClass(t.metadata.durationMs) === 'slow' ? 'SLOW' : 'OK' }}
-                      </span>
-                    </td>
-                    <td class="num" style="color:var(--text-2);font-size:11px;text-align:right">
-                      {{ getRelative(t.timestamp) }}
-                    </td>
-                  </tr>
-                </template>
-              </tbody>
-            </table>
-          </div>
-        </template>
+        <TraceTableView
+          v-else-if="variant === 'table'"
+          :traces="traces"
+          :selected="selected"
+          :pending="pending"
+          @toggle-select="toggleSelect"
+          @row-click="handleRowClick"
+          @row-menu-select="onRowMenuSelect"
+        />
 
         <!-- ── CARDS VIEW ── -->
-        <template v-else-if="variant === 'cards'">
-          <div class="cards-wrap">
-            <!-- skeleton -->
-            <template v-if="pending">
-              <div v-for="(_, i) in SKEL_CARDS" :key="i" class="card" style="cursor:default">
-                <div class="card-head">
-                  <div class="left" style="gap:6px;flex:1">
-                    <div style="display:flex;gap:8px">
-                      <div class="sk pill" style="width:60px" />
-                      <div class="sk line" style="width:100px" />
-                    </div>
-                    <div class="sk line lg" style="width:55%" />
-                    <div class="sk line sm" style="width:140px" />
-                  </div>
-                  <div style="display:flex;gap:4px">
-                    <div class="sk box" style="width:22px;height:22px" />
-                    <div class="sk box" style="width:22px;height:22px" />
-                  </div>
-                </div>
-                <div class="sk box" style="height:50px" />
-                <div style="display:flex;gap:6px">
-                  <div class="sk pill" style="width:50px" />
-                  <div class="sk pill" style="width:70px" />
-                  <div class="sk pill" style="width:40px" />
-                </div>
-                <div class="card-meta">
-                  <div v-for="k in 4" :key="k" class="m" style="gap:4px">
-                    <div class="sk line sm" style="width:30px" />
-                    <div class="sk line lg" style="width:44px" />
-                  </div>
-                </div>
-              </div>
-            </template>
-
-            <!-- actual cards -->
-            <template v-else>
-              <div
-                v-for="t in traces" :key="t.id"
-                class="card"
-                :style="selected.has(t.id) ? 'border-color:var(--accent-border);background:var(--accent-bg)' : ''"
-                @click="handleRowClick(t.id)"
-              >
-                <div class="card-head">
-                  <div class="left">
-                    <div class="card-row">
-                      <span :class="`prov prov-${t.metadata.provider}`">{{ t.metadata.provider }}</span>
-                      <span class="model">{{ t.metadata.model }}</span>
-                    </div>
-                    <div class="card-row">
-                      <span class="card-title">{{ traceName(t) }}</span>
-                    </div>
-                    <div class="card-row" style="gap:6px">
-                      <span class="mono" style="font-size:10px;color:var(--text-3)">{{ t.id.slice(-8) }}</span>
-                      <span style="color:var(--text-3)">·</span>
-                      <span class="card-date">{{ formatDate(t.timestamp) }}</span>
-                    </div>
-                  </div>
-                  <div style="display:flex;gap:2px">
-                    <button class="action-btn" title="Select" @click.stop="toggleSelect(t.id)">
-                      <div class="cbox" :class="{ on: selected.has(t.id) }" style="pointer-events:none" />
-                    </button>
-                    <ActionMenu
-                      :items="[
-                        { id: 'star', label: t.starred ? 'Unstar' : 'Star', icon: 'star' },
-                        { id: 'copy-link', label: 'Copy link', icon: 'note' },
-                        { id: 'delete', label: 'Delete', icon: 'trash', danger: true },
-                      ]"
-                      @select="onRowMenuSelect(t, $event)"
-                    >
-                      <button class="action-btn" title="More">
-                        <AppIcon name="more" :size="12" />
-                      </button>
-                    </ActionMenu>
-                  </div>
-                </div>
-
-                <div class="card-snippet">
-                  <span class="role">user</span>{{ getSnippet(t) || "—" }}
-                </div>
-
-                <div style="display:flex;align-items:center;gap:8px">
-                  <div class="card-tags" style="flex:1">
-                    <span v-if="hasSystem(t)" class="tag sys">system</span>
-                    <span v-if="toolCallCount(t) > 0" class="tag tool">
-                      <AppIcon name="tool" :size="9" />{{ toolCallCount(t) }} tool {{ toolCallCount(t) === 1 ? 'call' : 'calls' }}
-                    </span>
-                    <span
-                      v-if="t.metadata.stopReason && t.metadata.stopReason !== 'end_turn'"
-                      class="tag flag"
-                    >{{ t.metadata.stopReason }}</span>
-                  </div>
-                </div>
-
-                <div class="card-meta">
-                  <div class="m">
-                    <div class="l">↑ in</div>
-                    <div class="v">{{ fmtN(t.usage.inputTokens) }}</div>
-                  </div>
-                  <div class="m">
-                    <div class="l">↓ out</div>
-                    <div class="v">{{ fmtN(t.usage.outputTokens) }}</div>
-                  </div>
-                  <div class="m">
-                    <div class="l">latency</div>
-                    <div class="v" :class="latClass(t.metadata.durationMs)">{{ fmtMs(t.metadata.durationMs) }}</div>
-                  </div>
-                  <div class="m">
-                    <div class="l">cost</div>
-                    <div class="v" style="color:var(--success)">{{ fmtUsd(t.metadata.costUsd) }}</div>
-                  </div>
-                </div>
-              </div>
-            </template>
-          </div>
-        </template>
+        <TraceCardsView
+          v-else-if="variant === 'cards'"
+          :traces="traces"
+          :selected="selected"
+          :pending="pending"
+          @toggle-select="toggleSelect"
+          @row-click="handleRowClick"
+          @row-menu-select="onRowMenuSelect"
+        />
 
         <!-- empty state -->
         <div v-if="!pending && traces.length === 0 && !error" class="empty-state">
@@ -922,220 +617,6 @@ const SKEL_CARDS = Array.from({ length: 9 });
   font-size: 12px; color: var(--danger);
 }
 
-/* ── Provider badge ── */
-.prov {
-  display: inline-flex; align-items: center; gap: 4px;
-  font-family: var(--font-mono); font-size: 10px;
-  padding: 2px 6px; border-radius: 3px;
-  text-transform: lowercase; letter-spacing: 0.02em;
-  font-weight: 500; white-space: nowrap;
-}
-.prov::before {
-  content: ""; width: 6px; height: 6px;
-  border-radius: 50%; background: currentColor; opacity: 0.9;
-}
-.prov-anthropic { color: var(--provider-anthropic); background: var(--provider-anthropic-bg); }
-.prov-openai    { color: var(--provider-openai);    background: var(--provider-openai-bg); }
-.prov-vercel    { color: var(--provider-vercel);    background: var(--provider-vercel-bg); }
-.prov-vercel-ai { color: var(--provider-vercel);    background: var(--provider-vercel-bg); }
-.model { font-family: var(--font-mono); font-size: 12px; color: var(--text-0); white-space: nowrap; }
-
-/* ── Markers / tags ── */
-.markers { display: inline-flex; gap: 4px; align-items: center; }
-.marker {
-  display: inline-flex; align-items: center; gap: 3px;
-  padding: 0 4px; height: 16px;
-  border-radius: 3px;
-  font-family: var(--font-mono); font-size: 9px;
-  color: var(--text-2);
-  background: var(--bg-2); border: 1px solid var(--border-1);
-  white-space: nowrap;
-}
-.marker.tool { color: var(--warn); border-color: var(--provider-anthropic-bg); }
-.marker.sys  { color: var(--accent); border-color: var(--accent-border); }
-.tag {
-  display: inline-flex; align-items: center; gap: 3px;
-  font-family: var(--font-mono); font-size: 10px;
-  color: var(--text-2);
-  background: var(--bg-1); border: 1px solid var(--border-0);
-  border-radius: 3px; padding: 1px 5px;
-}
-.tag.sys  { color: var(--accent); border-color: var(--accent-border); }
-.tag.tool { color: var(--warn); border-color: var(--provider-anthropic-bg); }
-.tag.flag { color: var(--danger); border-color: oklch(0.68 0.20 25 / 0.35); }
-
-/* ── Checkbox ── */
-.cbox {
-  width: 14px; height: 14px;
-  border: 1px solid var(--border-2);
-  border-radius: 3px;
-  display: inline-grid; place-items: center;
-  background: var(--bg-1);
-  flex-shrink: 0; cursor: pointer;
-}
-.cbox.on { background: var(--accent); border-color: var(--accent); color: white; }
-.cbox.on::after {
-  content: "";
-  width: 7px; height: 4px;
-  border-left: 1.5px solid white;
-  border-bottom: 1.5px solid white;
-  transform: rotate(-45deg) translate(0, -1px);
-}
-
-/* ── List view ── */
-.list { display: flex; flex-direction: column; }
-.list-row {
-  display: grid;
-  grid-template-columns: 18px 90px minmax(160px,1.4fr) minmax(160px,1fr) 64px 64px 84px 64px 44px 72px 40px;
-  align-items: center;
-  gap: 14px;
-  padding: 8px 20px;
-  border-bottom: 1px solid var(--border-0);
-  cursor: pointer;
-  font-size: 12px;
-  min-height: 38px;
-}
-.list-row:hover { background: var(--bg-2); }
-.list-row.selected { background: var(--accent-bg); }
-.list-row.head {
-  font-size: 10px; text-transform: uppercase;
-  letter-spacing: 0.06em; color: var(--text-2); font-weight: 500;
-  cursor: default; min-height: 30px;
-  padding-top: 4px; padding-bottom: 4px;
-  background: var(--bg-1);
-  position: sticky; top: 0; z-index: 2;
-}
-.list-row.head:hover { background: var(--bg-1); }
-.col-title { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.col-title .t1 { color: var(--text-0); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.col-title .t2 { color: var(--text-2); font-family: var(--font-mono); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.col-snippet { color: var(--text-1); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: flex; align-items: center; }
-.col-msg { font-family: var(--font-mono); font-size: 11px; color: var(--text-1); font-feature-settings: "tnum"; display: inline-flex; align-items: center; gap: 3px; }
-.col-msg.lat.warn { color: var(--warn); }
-.col-msg.lat.slow { color: var(--danger); }
-.col-date { font-family: var(--font-mono); font-size: 11px; color: var(--text-2); font-feature-settings: "tnum"; text-align: right; }
-.col-actions { display: flex; gap: 2px; justify-content: flex-end; opacity: 0; transition: opacity 0.1s; }
-.list-row:hover .col-actions { opacity: 1; }
-.action-btn {
-  width: 22px; height: 22px;
-  display: grid; place-items: center;
-  border-radius: 3px; color: var(--text-2);
-}
-.action-btn:hover { background: var(--bg-3); color: var(--text-0); }
-
-/* ── Table view ── */
-.table-wrap { padding: 0 20px 20px; }
-.tbl {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 12px;
-  border: 1px solid var(--border-0);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-  background: var(--bg-2);
-}
-.tbl th {
-  text-align: left; font-size: 10px;
-  text-transform: uppercase; letter-spacing: 0.06em;
-  color: var(--text-2); font-weight: 500;
-  padding: 7px 10px;
-  background: var(--bg-1);
-  border-bottom: 1px solid var(--border-0);
-  white-space: nowrap;
-  position: sticky; top: 0;
-}
-.tbl th.num, .tbl td.num { text-align: right; font-family: var(--font-mono); font-feature-settings: "tnum"; }
-.tbl td {
-  padding: 6px 10px;
-  border-bottom: 1px solid var(--border-0);
-  vertical-align: middle;
-  font-size: 12px; height: 30px;
-}
-.tbl tbody tr { cursor: pointer; }
-.tbl tbody tr:hover { background: var(--bg-3); }
-.tbl tbody tr:last-child td { border-bottom: 0; }
-.tbl tbody tr.selected { background: var(--accent-bg); }
-.tbl tbody tr.selected td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
-.col-id { color: var(--text-3); font-family: var(--font-mono); font-size: 10px; }
-.col-name { color: var(--text-0); font-weight: 500; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.col-snippet { color: var(--text-1); font-size: 11px; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.latbar {
-  display: inline-block; height: 4px; border-radius: 2px;
-  background: var(--success); min-width: 4px;
-  vertical-align: middle; margin-right: 6px;
-}
-.latbar.warn { background: var(--warn); }
-.latbar.slow { background: var(--danger); }
-.mono { font-family: var(--font-mono); }
-
-/* ── Cards view ── */
-.cards-wrap {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
-  gap: 12px;
-  padding: 4px 20px 20px;
-}
-.card {
-  background: var(--bg-2);
-  border: 1px solid var(--border-1);
-  border-radius: var(--radius-lg);
-  padding: 14px;
-  cursor: pointer;
-  display: flex; flex-direction: column; gap: 10px;
-  transition: border-color 0.1s, background 0.1s;
-}
-.card:hover { border-color: var(--border-2); background: var(--bg-3); }
-.card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
-.card-head .left { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-.card-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.card-title { font-weight: 500; font-size: 13px; color: var(--text-0); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.card-date { font-family: var(--font-mono); font-size: 11px; color: var(--text-2); font-feature-settings: "tnum"; white-space: nowrap; }
-.card-snippet {
-  font-size: 12px; color: var(--text-1);
-  background: var(--bg-1);
-  border-radius: var(--radius-sm);
-  padding: 8px 10px;
-  border: 1px solid var(--border-0);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  line-height: 1.45;
-}
-.card-snippet .role {
-  font-family: var(--font-mono); font-size: 10px;
-  text-transform: uppercase; color: var(--text-2);
-  margin-right: 6px; letter-spacing: 0.05em;
-}
-.card-meta {
-  display: grid; grid-template-columns: 1fr 1fr 1fr 1fr;
-  gap: 8px; padding-top: 8px;
-  border-top: 1px solid var(--border-0);
-}
-.card-meta .m { display: flex; flex-direction: column; gap: 2px; }
-.card-meta .m .l { font-size: 9px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-2); font-weight: 500; }
-.card-meta .m .v { font-family: var(--font-mono); font-size: 12px; color: var(--text-0); font-feature-settings: "tnum"; }
-.card-meta .m .v.warn { color: var(--warn); }
-.card-meta .m .v.slow { color: var(--danger); }
-.card-tags { display: flex; gap: 4px; flex-wrap: wrap; }
-
-/* ── Skeleton ── */
-.sk {
-  background: linear-gradient(90deg, var(--bg-2) 0%, var(--bg-3) 50%, var(--bg-2) 100%);
-  background-size: 200% 100%;
-  animation: shimmer 1.4s linear infinite;
-  border-radius: 4px;
-}
-@keyframes shimmer {
-  0%   { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
-}
-.sk.line    { height: 10px; }
-.sk.line.sm { height: 8px; }
-.sk.line.lg { height: 14px; }
-.sk.pill    { height: 16px; border-radius: 3px; }
-.sk.box     { border-radius: 6px; }
-
 /* ── Pager ── */
 .pager {
   padding: 12px 20px 20px;
@@ -1217,11 +698,5 @@ const SKEL_CARDS = Array.from({ length: 9 });
   z-index: 10;
 }
 
-/* ── Dot ── */
-.dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
-.dot.ok   { background: var(--success); }
-.dot.warn { background: var(--warn); }
-.dot.slow { background: var(--danger); }
-.dot.err  { background: var(--danger); }
 
 </style>

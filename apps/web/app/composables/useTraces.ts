@@ -21,13 +21,9 @@ export function useTraces(opts?: {
   const { apiFetch } = useApiFetch();
 
   const page = ref<TracesPage>({ traces: [], total: 0, limit: 50, offset: 0 });
-  const pending = ref(false);
-  const error = ref<string | null>(null);
+  const { pending, error, run } = useRequest();
 
   async function fetchTraces(offset = 0) {
-    pending.value = true;
-    error.value = null;
-
     const params = new URLSearchParams({
       limit: String(opts?.limit ?? 50),
       offset: String(offset),
@@ -41,13 +37,8 @@ export function useTraces(opts?: {
     if (opts?.q) params.set("q", opts.q);
     if (opts?.sort) params.set("sort", opts.sort);
 
-    try {
-      page.value = await apiFetch<TracesPage>(`/traces?${params}`);
-    } catch (err) {
-      error.value = getErrorMessage(err);
-    } finally {
-      pending.value = false;
-    }
+    const result = await run(() => apiFetch<TracesPage>(`/traces?${params}`));
+    if (result) page.value = result;
   }
 
   async function deleteOne(id: string) {

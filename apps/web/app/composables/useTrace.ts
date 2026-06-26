@@ -12,19 +12,11 @@ export function useTrace(id: string) {
   const { apiFetch } = useApiFetch();
 
   const trace = ref<UnifiedTrace | null>(null);
-  const pending = ref(false);
-  const error = ref<string | null>(null);
+  const { pending, error, run } = useRequest();
 
   async function fetchTrace() {
-    pending.value = true;
-    error.value = null;
-    try {
-      trace.value = await apiFetch<UnifiedTrace>(`/traces/${id}`);
-    } catch (err) {
-      error.value = getErrorMessage(err);
-    } finally {
-      pending.value = false;
-    }
+    const result = await run(() => apiFetch<UnifiedTrace>(`/traces/${id}`));
+    if (result) trace.value = result;
   }
 
   async function toggleStar() {

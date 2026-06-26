@@ -1,6 +1,7 @@
 import { eq, gte, lte, desc, count, and, inArray, sql } from "drizzle-orm";
 import { db, traces, traceNotes, client } from "./index.js";
-import type { UnifiedTrace, TraceProvider, TraceMessage } from "@llm-lens/types";
+import type { UnifiedTrace, TraceProvider } from "@llm-lens/types";
+import { extractMessageSnippet } from "@llm-lens/parsers";
 import { LATENCY_WARN_MS, LATENCY_SLOW_MS, FTS_MATCH_LIMIT, EXPORT_PAGE_SIZE } from "../constants.js";
 
 export type TraceSort = "recent" | "latency" | "cost" | "tokens";
@@ -19,14 +20,6 @@ export interface ListOptions {
   q?: string;
   sort?: TraceSort;
   userId: string;
-}
-
-function extractSnippet(messages: TraceMessage[]): string {
-  const first = messages.find((m) => m.role === "user");
-  if (!first) return "";
-  if (typeof first.content === "string") return first.content.slice(0, 500);
-  const block = first.content.find((b) => b.type === "text");
-  return block && "text" in block ? block.text.slice(0, 500) : "";
 }
 
 function ftsEscape(q: string): string {
@@ -100,7 +93,7 @@ export async function insertTrace(
   });
   await client.execute({
     sql: `INSERT INTO traces_fts (id, model, snippet) VALUES (?, ?, ?)`,
-    args: [trace.id, trace.metadata.model, extractSnippet(trace.messages)],
+    args: [trace.id, trace.metadata.model, extractMessageSnippet(trace.messages)],
   });
   return trace;
 }
@@ -239,7 +232,7 @@ export async function addNote(traceId: string, userId: string, body: string) {
     traceId,
     userId,
     body,
-    createdAt: new Date().toISOString(),
+    createdAt: Date.now(),
   };
   await db.insert(traceNotes).values(note);
   return note;
