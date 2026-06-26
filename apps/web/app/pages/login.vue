@@ -6,6 +6,15 @@ useHead({ htmlAttrs: { 'data-theme': 'dark' } })
 const { login, loginTwoFactor } = useAuth()
 const config = useRuntimeConfig()
 const apiBase = config.public.apiBase as string
+const demoMode = config.public.demoMode as boolean
+
+const DEMO_EMAIL = 'demo@llmlens.dev'
+const DEMO_PASSWORD = 'demo1234'
+
+function fillDemo() {
+  email.value = DEMO_EMAIL
+  password.value = DEMO_PASSWORD
+}
 
 const email = ref('')
 const password = ref('')
@@ -115,6 +124,14 @@ function onKeydown(e: KeyboardEvent) {
             </svg>
           </div>
           <span>LLM Lens</span>
+        </div>
+
+        <div v-if="demoMode" class="demo-banner" @click="fillDemo">
+          <span class="demo-label">demo</span>
+          <span class="demo-cred"><span class="demo-k">email</span> {{ DEMO_EMAIL }}</span>
+          <span class="demo-sep">·</span>
+          <span class="demo-cred"><span class="demo-k">pass</span> {{ DEMO_PASSWORD }}</span>
+          <span class="demo-hint">click to fill</span>
         </div>
 
         <h2 class="auth-h">Sign in</h2>
@@ -448,6 +465,48 @@ function onKeydown(e: KeyboardEvent) {
 .jwt-chip .b2 { color: var(--warn); }
 .jwt-chip .b3 { color: var(--success); }
 .jwt-chip .sep { color: var(--text-3); }
+
+/* Demo banner */
+.demo-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  margin-bottom: 16px;
+  background: oklch(0.28 0.06 230 / 0.5);
+  border: 1px solid oklch(0.55 0.14 230 / 0.4);
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  font-family: var(--font-mono);
+  color: var(--text-1);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.demo-banner:hover {
+  border-color: oklch(0.65 0.16 230 / 0.7);
+  background: oklch(0.32 0.07 230 / 0.5);
+}
+.demo-label {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+  color: oklch(0.72 0.14 230);
+  background: oklch(0.55 0.14 230 / 0.2);
+  border: 1px solid oklch(0.55 0.14 230 / 0.35);
+  padding: 1px 5px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+.demo-cred { color: var(--text-0); }
+.demo-k { color: var(--text-3); margin-right: 3px; }
+.demo-sep { color: var(--text-3); }
+.demo-hint {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--text-3);
+  flex-shrink: 0;
+}
 
 /* Legal */
 .auth-legal {
