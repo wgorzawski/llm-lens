@@ -367,7 +367,7 @@ const sortOptions = [
         <div v-if="error" class="error-strip">{{ error }}</div>
 
         <!-- ── LIST VIEW ── -->
-        <TraceListView
+        <TracesListView
           v-if="variant === 'list'"
           :traces="traces"
           :selected="selected"
@@ -378,7 +378,7 @@ const sortOptions = [
         />
 
         <!-- ── TABLE VIEW ── -->
-        <TraceTableView
+        <TracesTableView
           v-else-if="variant === 'table'"
           :traces="traces"
           :selected="selected"
@@ -389,7 +389,7 @@ const sortOptions = [
         />
 
         <!-- ── CARDS VIEW ── -->
-        <TraceCardsView
+        <TracesCardsView
           v-else-if="variant === 'cards'"
           :traces="traces"
           :selected="selected"
