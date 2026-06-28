@@ -65,7 +65,7 @@ jobs:
           rsync -az --delete \
             -e "$RSYNC_SSH" \
             apps/web/.output/ \
-            ${{ secrets.DEMO_SSH_USER }}@${{ secrets.DEMO_SSH_HOST }}:~/llm-lens/apps/web/.output/
+            ${{ secrets.DEMO_SSH_USER }}@${{ secrets.DEMO_SSH_HOST }}:/home/llmlens/apps/web/.output/
 
       # ── upload seed script + PM2 config ────────────────────────────────
       - name: Upload scripts & ecosystem config
@@ -73,19 +73,19 @@ jobs:
           rsync -az \
             -e "$RSYNC_SSH" \
             scripts/ \
-            ${{ secrets.DEMO_SSH_USER }}@${{ secrets.DEMO_SSH_HOST }}:~/llm-lens/scripts/
+            ${{ secrets.DEMO_SSH_USER }}@${{ secrets.DEMO_SSH_HOST }}:/home/llmlens/scripts/
 
           rsync -az \
             -e "$RSYNC_SSH" \
             ecosystem.config.cjs \
-            ${{ secrets.DEMO_SSH_USER }}@${{ secrets.DEMO_SSH_HOST }}:~/llm-lens/ecosystem.config.cjs
+            ${{ secrets.DEMO_SSH_USER }}@${{ secrets.DEMO_SSH_HOST }}:/home/llmlens/ecosystem.config.cjs
 
       # ── update server: pull code, install, build API, reload PM2 ─────────
       - name: Update & restart server
         run: |
           $SSH_CMD bash -s << 'ENDSSH'
             set -e
-            cd ~/llm-lens
+            cd /home/llmlens
 
             echo "→ pulling latest code"
             git pull origin master
@@ -113,7 +113,7 @@ jobs:
         run: |
           $SSH_CMD bash -s << 'ENDSSH'
             set -e
-            cd ~/llm-lens
+            cd /home/llmlens
             echo "→ wiping and re-seeding demo database"
             rm -f apps/api/demo.db
             API_URL=http://localhost:3032 npx tsx scripts/seed-demo.ts
