@@ -140,6 +140,12 @@ jobs:
             cd /home/llm-lens
             echo "→ wiping and re-seeding demo database"
             rm -f apps/api/demo.db
+            pm2 restart demo-api
+            echo "→ waiting for API..."
+            for i in $(seq 1 20); do
+              curl -sf http://localhost:3032/health && break
+              sleep 2
+            done
             API_URL=http://localhost:3032 npx tsx scripts/seed-demo.ts
           ENDSSH
 
