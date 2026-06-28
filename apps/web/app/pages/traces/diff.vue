@@ -9,7 +9,7 @@ const idB = String(route.query.b ?? "");
 
 const { trace: traceA, pending: pendingA, error: errorA, fetchTrace: fetchA } = useTrace(idA);
 const { trace: traceB, pending: pendingB, error: errorB, fetchTrace: fetchB } = useTrace(idB);
-await Promise.all([fetchA(), fetchB()]);
+if (idA && idB) await Promise.all([fetchA(), fetchB()]);
 
 const pending = computed(() => pendingA.value || pendingB.value);
 
