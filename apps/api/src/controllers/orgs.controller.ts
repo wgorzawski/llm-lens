@@ -1,7 +1,7 @@
 import { Controller, GET, PATCH, POST, DELETE } from "fastify-decorators";
 import type { FastifyReply, FastifyRequest } from "fastify";
-import { findUserById, updateUserOrgSlug } from "../db/users.repository.js";
-import { getOrg, upsertOrg, findOrgBySlugExcluding, type OrgUpdate } from "../db/orgs.repository.js";
+import { findUserById, updateUserOrgSlug } from "../db/users.repository";
+import { getOrg, upsertOrg, findOrgBySlugExcluding, type OrgUpdate } from "../db/orgs.repository";
 import {
   getOrCreateOwnerMembership,
   listMembers,
@@ -14,7 +14,7 @@ import {
   removeMember,
   renameOrgMembers,
   type MemberRole,
-} from "../db/org-members.repository.js";
+} from "../db/org-members.repository";
 
 const ROLES: MemberRole[] = ["owner", "admin", "member", "viewer"];
 

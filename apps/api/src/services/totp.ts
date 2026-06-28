@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { authenticator } from "otplib";
-import { DEFAULT_RECOVERY_CODE_COUNT } from "../constants.js";
+import { DEFAULT_RECOVERY_CODE_COUNT } from "../constants";
 
 export function generateTotpSecret(): string {
   return authenticator.generateSecret();

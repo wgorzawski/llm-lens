@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { and, eq } from "drizzle-orm";
-import { db, orgMembers, users } from "./index.js";
+import { db, orgMembers, users } from "./index";
 
 export type MemberRole = "owner" | "admin" | "member" | "viewer";
 

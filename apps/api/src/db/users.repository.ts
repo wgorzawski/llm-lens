@@ -1,5 +1,5 @@
 import { eq, and, ne } from "drizzle-orm";
-import { db, users } from "./index.js";
+import { db, users } from "./index";
 
 export async function createUser(email: string, passwordHash: string, provider = "email", providerId?: string) {
   const id = crypto.randomUUID();
