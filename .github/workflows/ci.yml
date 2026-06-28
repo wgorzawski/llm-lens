@@ -32,6 +32,7 @@ jobs:
         run: |
           pnpm --filter @llm-lens/types build
           pnpm --filter @llm-lens/parsers build
+          pnpm --filter @llm-lens/instrument build
 
       - name: Run tests
         run: pnpm --filter @llm-lens/parsers test
@@ -44,6 +45,9 @@ jobs:
 
       - name: Typecheck web
         run: pnpm --filter @llm-lens/web typecheck
+
+      - name: Typecheck playground
+        run: pnpm --filter @llm-lens/playground typecheck
 
   build:
     name: Build
@@ -67,6 +71,7 @@ jobs:
         run: |
           pnpm --filter @llm-lens/types build
           pnpm --filter @llm-lens/parsers build
+          pnpm --filter @llm-lens/instrument build
 
       - name: Build API
         run: pnpm --filter @llm-lens/api build
@@ -75,3 +80,6 @@ jobs:
         run: pnpm --filter @llm-lens/web build
         env:
           NUXT_PUBLIC_API_BASE: ${{ vars.API_BASE_URL || 'http://localhost:3001/api' }}
+
+      - name: Build playground
+        run: pnpm --filter @llm-lens/playground build

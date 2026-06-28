@@ -81,6 +81,20 @@ pnpm --filter @llm-lens/parsers build
 pnpm --filter @llm-lens/instrument build
 ```
 
+### Configure environment
+
+```bash
+cp apps/api/.env.example apps/api/.env
+```
+
+Edit `apps/api/.env` and set at minimum:
+
+```
+JWT_SECRET=<any random string, e.g. output of `openssl rand -hex 32`>
+```
+
+All other variables have sensible defaults for local development (see `.env.example` for the full list with explanations).
+
 ### Run
 
 Start both servers in separate terminals:
@@ -95,11 +109,7 @@ pnpm --filter @llm-lens/web dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
-The SQLite database is created automatically at `./llm-lens.db` on first run. Override with:
-
-```bash
-DATABASE_URL=file:/path/to/custom.db pnpm --filter @llm-lens/api dev
-```
+The SQLite database is created automatically at `./llm-lens.db` on first run.
 
 ## Auto-instrumentation
 

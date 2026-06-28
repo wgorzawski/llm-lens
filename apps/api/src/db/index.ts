@@ -1,6 +1,6 @@
 import { createClient } from "@libsql/client";
 import { drizzle } from "drizzle-orm/libsql";
-import { traces, users, apiKeys } from "./schema.js";
+import { traces, users, apiKeys, traceNotes, sessions, orgs, orgMembers } from "./schema";
 
 const dbUrl = process.env["DATABASE_URL"] ?? "file:./llm-lens.db";
 
@@ -22,9 +22,24 @@ export async function initDb(): Promise<void> {
   for (const col of [
     `ALTER TABLE users ADD COLUMN provider TEXT NOT NULL DEFAULT 'email'`,
     `ALTER TABLE users ADD COLUMN provider_id TEXT`,
+    `ALTER TABLE users ADD COLUMN org TEXT NOT NULL DEFAULT 'personal'`,
+    `ALTER TABLE users ADD COLUMN plan TEXT NOT NULL DEFAULT 'free'`,
+    `ALTER TABLE users ADD COLUMN display_name TEXT NOT NULL DEFAULT ''`,
+    `ALTER TABLE users ADD COLUMN handle TEXT`,
+    `ALTER TABLE users ADD COLUMN timezone TEXT NOT NULL DEFAULT 'UTC'`,
+    `ALTER TABLE users ADD COLUMN locale TEXT NOT NULL DEFAULT 'en-US'`,
+    `ALTER TABLE users ADD COLUMN date_format TEXT NOT NULL DEFAULT 'iso'`,
+    `ALTER TABLE users ADD COLUMN preferences TEXT NOT NULL DEFAULT '{}'`,
+    `ALTER TABLE users ADD COLUMN totp_secret TEXT`,
+    `ALTER TABLE users ADD COLUMN totp_enabled INTEGER NOT NULL DEFAULT 0`,
+    `ALTER TABLE users ADD COLUMN totp_recovery_codes TEXT NOT NULL DEFAULT '[]'`,
   ]) {
     try { await client.execute(col); } catch { /* already exists */ }
   }
+
+  await client.execute(
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_users_handle ON users (handle)`
+  );
 
   await client.execute(`
     CREATE TABLE IF NOT EXISTS traces (
@@ -41,10 +56,13 @@ export async function initDb(): Promise<void> {
     )
   `);
 
-  try {
-    await client.execute(`ALTER TABLE traces ADD COLUMN user_id TEXT NOT NULL DEFAULT ''`);
-  } catch {
-    // column already exists
+  for (const col of [
+    `ALTER TABLE traces ADD COLUMN user_id TEXT NOT NULL DEFAULT ''`,
+    `ALTER TABLE traces ADD COLUMN status TEXT NOT NULL DEFAULT 'ok'`,
+    `ALTER TABLE traces ADD COLUMN starred INTEGER NOT NULL DEFAULT 0`,
+    `ALTER TABLE traces ADD COLUMN replay_of TEXT`,
+  ]) {
+    try { await client.execute(col); } catch { /* already exists */ }
   }
 
   await client.execute(
@@ -56,6 +74,9 @@ export async function initDb(): Promise<void> {
   await client.execute(
     `CREATE INDEX IF NOT EXISTS idx_traces_timestamp ON traces (timestamp DESC)`
   );
+  await client.execute(
+    `CREATE INDEX IF NOT EXISTS idx_traces_status ON traces (status)`
+  );
 
   await client.execute(`
     CREATE TABLE IF NOT EXISTS api_keys (
@@ -63,10 +84,82 @@ export async function initDb(): Promise<void> {
       user_id      TEXT    NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       name         TEXT    NOT NULL,
       key_hash     TEXT    NOT NULL UNIQUE,
-      last_used_at TEXT,
+      last_used_at INTEGER,
       created_at   INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000)
+    )
+  `);
+
+  await client.execute(`
+    CREATE TABLE IF NOT EXISTS trace_notes (
+      id         TEXT NOT NULL PRIMARY KEY,
+      trace_id   TEXT NOT NULL,
+      user_id    TEXT NOT NULL,
+      body       TEXT NOT NULL,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000)
+    )
+  `);
+  await client.execute(
+    `CREATE INDEX IF NOT EXISTS idx_trace_notes_trace_id ON trace_notes (trace_id)`
+  );
+
+  await client.execute(`
+    CREATE TABLE IF NOT EXISTS sessions (
+      id              TEXT    NOT NULL PRIMARY KEY,
+      user_id         TEXT    NOT NULL,
+      device          TEXT    NOT NULL,
+      ip              TEXT    NOT NULL,
+      user_agent      TEXT    NOT NULL,
+      created_at      INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000),
+      last_active_at  INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000)
+    )
+  `);
+  await client.execute(
+    `CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions (user_id)`
+  );
+
+  await client.execute(`
+    CREATE TABLE IF NOT EXISTS orgs (
+      slug           TEXT    PRIMARY KEY,
+      name           TEXT    NOT NULL,
+      default_env    TEXT    NOT NULL DEFAULT 'production',
+      retention_days INTEGER NOT NULL DEFAULT 7,
+      created_at     INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000)
+    )
+  `);
+
+  for (const col of [
+    `ALTER TABLE orgs ADD COLUMN retention_days INTEGER NOT NULL DEFAULT 7`,
+  ]) {
+    try { await client.execute(col); } catch { /* already exists */ }
+  }
+
+  await client.execute(`
+    CREATE TABLE IF NOT EXISTS org_members (
+      id           TEXT    PRIMARY KEY,
+      org_slug     TEXT    NOT NULL,
+      user_id      TEXT,
+      email        TEXT    NOT NULL,
+      role         TEXT    NOT NULL DEFAULT 'member',
+      status       TEXT    NOT NULL DEFAULT 'pending',
+      invite_token TEXT,
+      invited_at   INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000),
+      joined_at    INTEGER
+    )
+  `);
+  await client.execute(
+    `CREATE INDEX IF NOT EXISTS idx_org_members_org_slug ON org_members (org_slug)`
+  );
+  await client.execute(
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_org_members_invite_token ON org_members (invite_token) WHERE invite_token IS NOT NULL`
+  );
+
+  await client.execute(`
+    CREATE VIRTUAL TABLE IF NOT EXISTS traces_fts USING fts5(
+      id UNINDEXED,
+      model,
+      snippet
     )
   `);
 }
 
-export { traces, users, apiKeys };
+export { traces, users, apiKeys, traceNotes, sessions, orgs, orgMembers, client };

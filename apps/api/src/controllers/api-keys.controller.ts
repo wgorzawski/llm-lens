@@ -1,6 +1,6 @@
 import { Controller, GET, POST, DELETE } from "fastify-decorators";
 import type { FastifyReply, FastifyRequest } from "fastify";
-import { createApiKey, listApiKeys, deleteApiKey } from "../db/api-keys.repository.js";
+import { createApiKey, listApiKeys, deleteApiKey } from "../db/api-keys.repository";
 
 @Controller("/keys")
 export class ApiKeysController {

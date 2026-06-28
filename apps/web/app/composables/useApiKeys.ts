@@ -1,7 +1,7 @@
 export interface ApiKey {
   id: string;
   name: string;
-  lastUsedAt: string | null;
+  lastUsedAt: number | null;
   createdAt: number;
 }
 
@@ -10,47 +10,24 @@ export interface CreatedApiKey extends ApiKey {
 }
 
 export function useApiKeys() {
-  const config = useRuntimeConfig();
-  const apiBase = config.public.apiBase as string;
-  const { token } = useAuth();
+  const { apiFetch } = useApiFetch();
 
   const keys = ref<ApiKey[]>([]);
-  const pending = ref(false);
-  const error = ref<string | null>(null);
-
-  function authHeaders(): Record<string, string> {
-    return token.value ? { Authorization: `Bearer ${token.value}` } : {};
-  }
+  const { pending, error, run } = useRequest();
 
   async function fetchKeys() {
-    pending.value = true;
-    error.value = null;
-    try {
-      keys.value = await $fetch<ApiKey[]>(`${apiBase}/keys`, {
-        headers: authHeaders(),
-      });
-    } catch (err) {
-      error.value = err instanceof Error ? err.message : String(err);
-    } finally {
-      pending.value = false;
-    }
+    const result = await run(() => apiFetch<ApiKey[]>("/keys"));
+    if (result) keys.value = result;
   }
 
   async function createKey(name: string): Promise<CreatedApiKey> {
-    const result = await $fetch<CreatedApiKey>(`${apiBase}/keys`, {
-      method: "POST",
-      headers: authHeaders(),
-      body: { name },
-    });
+    const result = await apiFetch<CreatedApiKey>("/keys", { method: "POST", body: { name } });
     keys.value = [result, ...keys.value];
     return result;
   }
 
   async function revokeKey(id: string) {
-    await $fetch(`${apiBase}/keys/${id}`, {
-      method: "DELETE",
-      headers: authHeaders(),
-    });
+    await apiFetch(`/keys/${id}`, { method: "DELETE" });
     keys.value = keys.value.filter((k) => k.id !== id);
   }
 
