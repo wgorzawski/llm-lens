@@ -62,7 +62,7 @@ jobs:
       # ── upload Nuxt output ─────────────────────────────────────────────
       - name: Upload web build
         run: |
-          rsync -az --delete \
+          rsync -az --delete --mkpath \
             -e "$RSYNC_SSH" \
             apps/web/.output/ \
             ${{ secrets.DEMO_SSH_USER }}@${{ secrets.DEMO_SSH_HOST }}:/home/llmlens/apps/web/.output/
