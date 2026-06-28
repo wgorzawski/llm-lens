@@ -40,10 +40,11 @@ const searchQuery = ref("");
 const { theme } = useAppearance();
 
 const escHandler = (e: KeyboardEvent) => { if (e.key === "Escape") selected.value = new Set(); };
-onMounted(() => {
+onMounted(async () => {
   window.addEventListener("keydown", escHandler);
   const presel = useRoute().query.select;
   if (typeof presel === "string") selected.value = new Set([presel]);
+  await fetchTraces();
 });
 onUnmounted(() => window.removeEventListener("keydown", escHandler));
 
@@ -76,7 +77,6 @@ const { page, pending, error, fetchTraces, deleteOne, deleteMany, setStarred } =
 });
 
 const traceCount = useState("trace-count", () => 0);
-await fetchTraces();
 watch(page, () => { traceCount.value = page.value.total; }, { immediate: true });
 watch(filterProvider, () => fetchTraces(0));
 watch(filterModel, () => fetchTraces(0));
