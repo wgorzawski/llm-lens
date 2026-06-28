@@ -57,7 +57,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="chip-wrap" ref="wrapRef">
+  <div ref="wrapRef" class="chip-wrap">
     <button
       type="button"
       class="chip"

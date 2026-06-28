@@ -34,7 +34,7 @@ const inputType = computed(() => (isPassword.value && showPassword.value ? 'text
         autocomplete="off"
         spellcheck="false"
         @input="model = ($event.target as HTMLInputElement).value"
-      />
+      >
       <span v-if="isPassword" class="trail">
         <button type="button" :title="showPassword ? 'Hide' : 'Show'" @click="showPassword = !showPassword">
           <svg v-if="showPassword" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">

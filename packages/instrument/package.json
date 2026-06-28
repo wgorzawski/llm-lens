@@ -17,14 +17,19 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "peerDependencies": {
-    "openai": ">=4"
+    "openai": ">=4",
+    "@anthropic-ai/sdk": ">=0.20"
   },
   "peerDependenciesMeta": {
     "openai": {
       "optional": true
+    },
+    "@anthropic-ai/sdk": {
+      "optional": true
     }
   },
   "devDependencies": {
+    "@anthropic-ai/sdk": "^0.52.0",
     "openai": "^4",
     "typescript": "^5.8.3"
   }

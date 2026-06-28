@@ -51,7 +51,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="am-wrap" ref="wrapRef" @click.stop="toggle">
+  <div ref="wrapRef" class="am-wrap" @click.stop="toggle">
     <slot />
     <Transition name="am-menu">
       <div
