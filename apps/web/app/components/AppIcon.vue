@@ -58,6 +58,16 @@ defineProps<{ name: string; size?: number }>();
     <template v-else-if="name === 'chevron-down'">
       <polyline points="6 9 12 15 18 9" />
     </template>
+    <template v-else-if="name === 'chevron-left'">
+      <polyline points="15 18 9 12 15 6" />
+    </template>
+    <template v-else-if="name === 'chevron-right'">
+      <polyline points="9 18 15 12 9 6" />
+    </template>
+    <template v-else-if="name === 'sidebar'">
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <line x1="9" y1="3" x2="9" y2="21" />
+    </template>
     <template v-else-if="name === 'search'">
       <circle cx="11" cy="11" r="8" />
       <line x1="21" y1="21" x2="16.65" y2="16.65" />

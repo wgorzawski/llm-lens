@@ -1,8 +1,6 @@
 <script setup lang="ts">
 import type { TraceMessage } from "@llm-lens/types";
 
-definePageMeta({ layout: false });
-
 const route = useRoute();
 const idA = String(route.query.a ?? "");
 const idB = String(route.query.b ?? "");
@@ -97,7 +95,7 @@ const rows = computed(() => {
 </template>
 
 <style scoped>
-.diff-page { min-height: 100vh; background: var(--bg-1); color: var(--text-0); font-family: var(--font-sans); font-size: 13px; }
+.diff-page { height: 100%; overflow-y: auto; background: var(--bg-1); color: var(--text-0); font-family: var(--font-sans); font-size: 13px; }
 .diff-top {
   display: flex; align-items: center; gap: 16px;
   padding: 0 20px; height: 52px;
