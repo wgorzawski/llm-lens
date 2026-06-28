@@ -85,6 +85,8 @@ jobs:
         run: |
           $SSH_CMD bash -s << 'ENDSSH'
             set -e
+            export NVM_DIR="$HOME/.nvm"
+            [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
             cd /home/llm-lens
 
             echo "→ pulling latest code"
@@ -113,6 +115,8 @@ jobs:
         run: |
           $SSH_CMD bash -s << 'ENDSSH'
             set -e
+            export NVM_DIR="$HOME/.nvm"
+            [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
             cd /home/llm-lens
             echo "→ wiping and re-seeding demo database"
             rm -f apps/api/demo.db
