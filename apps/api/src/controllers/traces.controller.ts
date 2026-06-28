@@ -14,8 +14,8 @@ import {
   type TraceSort,
   type TraceStatus,
   type LatencyBucket,
-} from "../db/repository.js";
-import { replayTrace } from "../services/replay.js";
+} from "../db/repository";
+import { replayTrace } from "../services/replay";
 
 const TRACE_SORTS: TraceSort[] = ["recent", "latency", "cost", "tokens"];
 const TRACE_STATUSES: TraceStatus[] = ["ok", "warn", "err"];

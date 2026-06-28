@@ -1,10 +1,10 @@
 import { Controller, GET, POST } from "fastify-decorators";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import bcrypt from "bcryptjs";
-import { createUser, findUserByEmail, findUserById, findOrCreateOAuthUser, consumeRecoveryCode } from "../db/users.repository.js";
-import { BCRYPT_ROUNDS, PENDING_2FA_TOKEN_TTL, OAUTH_FETCH_TIMEOUT_MS } from "../constants.js";
-import { createSession } from "../db/sessions.repository.js";
-import { verifyTotpCode, hashRecoveryCode } from "../services/totp.js";
+import { createUser, findUserByEmail, findUserById, findOrCreateOAuthUser, consumeRecoveryCode } from "../db/users.repository";
+import { BCRYPT_ROUNDS, PENDING_2FA_TOKEN_TTL, OAUTH_FETCH_TIMEOUT_MS } from "../constants";
+import { createSession } from "../db/sessions.repository";
+import { verifyTotpCode, hashRecoveryCode } from "../services/totp";
 
 declare module "@fastify/jwt" {
   interface FastifyJWT {

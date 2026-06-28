@@ -1,5 +1,5 @@
 import { eq, ne, and } from "drizzle-orm";
-import { db, orgs } from "./index.js";
+import { db, orgs } from "./index";
 
 export async function getOrg(slug: string) {
   const rows = await db.select().from(orgs).where(eq(orgs.slug, slug)).limit(1);

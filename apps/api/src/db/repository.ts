@@ -1,8 +1,8 @@
 import { eq, gte, lte, desc, count, and, inArray, sql } from "drizzle-orm";
-import { db, traces, traceNotes, client } from "./index.js";
+import { db, traces, traceNotes, client } from "./index";
 import type { UnifiedTrace, TraceProvider } from "@llm-lens/types";
 import { extractMessageSnippet } from "@llm-lens/parsers";
-import { LATENCY_WARN_MS, LATENCY_SLOW_MS, FTS_MATCH_LIMIT, EXPORT_PAGE_SIZE } from "../constants.js";
+import { LATENCY_WARN_MS, LATENCY_SLOW_MS, FTS_MATCH_LIMIT, EXPORT_PAGE_SIZE } from "../constants";
 
 export type TraceSort = "recent" | "latency" | "cost" | "tokens";
 export type TraceStatus = "ok" | "warn" | "err";

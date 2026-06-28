@@ -1,6 +1,6 @@
 import { Controller, GET, DELETE } from "fastify-decorators";
 import type { FastifyReply, FastifyRequest } from "fastify";
-import { listSessions, deleteSession } from "../db/sessions.repository.js";
+import { listSessions, deleteSession } from "../db/sessions.repository";
 
 @Controller("/sessions")
 export class SessionsController {

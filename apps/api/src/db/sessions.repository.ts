@@ -1,5 +1,5 @@
 import { eq, and, desc } from "drizzle-orm";
-import { db, sessions } from "./index.js";
+import { db, sessions } from "./index";
 
 export async function createSession(userId: string, device: string, ip: string, userAgent: string) {
   const now = Date.now();

@@ -1,6 +1,6 @@
 import { createClient } from "@libsql/client";
 import { drizzle } from "drizzle-orm/libsql";
-import { traces, users, apiKeys, traceNotes, sessions, orgs, orgMembers } from "./schema.js";
+import { traces, users, apiKeys, traceNotes, sessions, orgs, orgMembers } from "./schema";
 
 const dbUrl = process.env["DATABASE_URL"] ?? "file:./llm-lens.db";
 

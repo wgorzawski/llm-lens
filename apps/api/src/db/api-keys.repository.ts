@@ -1,6 +1,6 @@
 import { randomBytes, createHash } from "node:crypto";
 import { eq, and, desc } from "drizzle-orm";
-import { db, apiKeys } from "./index.js";
+import { db, apiKeys } from "./index";
 
 export interface ApiKeyPublic {
   id: string;

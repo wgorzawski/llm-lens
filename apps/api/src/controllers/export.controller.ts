@@ -2,7 +2,7 @@ import { Controller, GET } from "fastify-decorators";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { Readable } from "node:stream";
 import { createGzip } from "node:zlib";
-import { iterateAllTraces, usageByDay } from "../db/repository.js";
+import { iterateAllTraces, usageByDay } from "../db/repository";
 
 @Controller("/export")
 export class ExportController {

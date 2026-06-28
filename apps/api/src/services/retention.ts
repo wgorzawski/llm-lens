@@ -1,6 +1,6 @@
 import { and, eq, inArray, lt } from "drizzle-orm";
-import { db, traces, users } from "../db/index.js";
-import { listAllOrgs } from "../db/orgs.repository.js";
+import { db, traces, users } from "../db/index";
+import { listAllOrgs } from "../db/orgs.repository";
 
 export async function enforceRetention(): Promise<void> {
   const orgs = await listAllOrgs();

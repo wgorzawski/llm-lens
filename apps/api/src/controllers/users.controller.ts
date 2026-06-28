@@ -1,5 +1,5 @@
 import { Controller, GET, PATCH, POST } from "fastify-decorators";
-import { BCRYPT_ROUNDS } from "../constants.js";
+import { BCRYPT_ROUNDS } from "../constants";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import bcrypt from "bcryptjs";
 import QRCode from "qrcode";
@@ -14,14 +14,14 @@ import {
   disableTotp,
   consumeRecoveryCode,
   type ProfileUpdate,
-} from "../db/users.repository.js";
+} from "../db/users.repository";
 import {
   generateTotpSecret,
   totpKeyUri,
   verifyTotpCode,
   hashRecoveryCode,
   generateRecoveryCodes,
-} from "../services/totp.js";
+} from "../services/totp";
 
 type UserRow = NonNullable<Awaited<ReturnType<typeof findUserById>>>;
 

@@ -5,18 +5,18 @@ import jwt from "@fastify/jwt";
 import rateLimit from "@fastify/rate-limit";
 import oauth2Plugin, { type OAuth2Namespace } from "@fastify/oauth2";
 import { bootstrap } from "fastify-decorators";
-import { initDb } from "./db/index.js";
-import { TracesController } from "./controllers/traces.controller.js";
-import { AuthController } from "./controllers/auth.controller.js";
-import { ApiKeysController } from "./controllers/api-keys.controller.js";
-import { UsersController } from "./controllers/users.controller.js";
-import { SessionsController } from "./controllers/sessions.controller.js";
-import { OrgsController } from "./controllers/orgs.controller.js";
-import { ExportController } from "./controllers/export.controller.js";
-import { findUserById } from "./db/users.repository.js";
-import { hashKey, findApiKeyByHash, touchApiKey } from "./db/api-keys.repository.js";
-import { enforceRetention } from "./services/retention.js";
-import { RETENTION_CHECK_INTERVAL_MS } from "./constants.js";
+import { initDb } from "./db/index";
+import { TracesController } from "./controllers/traces.controller";
+import { AuthController } from "./controllers/auth.controller";
+import { ApiKeysController } from "./controllers/api-keys.controller";
+import { UsersController } from "./controllers/users.controller";
+import { SessionsController } from "./controllers/sessions.controller";
+import { OrgsController } from "./controllers/orgs.controller";
+import { ExportController } from "./controllers/export.controller";
+import { findUserById } from "./db/users.repository";
+import { hashKey, findApiKeyByHash, touchApiKey } from "./db/api-keys.repository";
+import { enforceRetention } from "./services/retention";
+import { RETENTION_CHECK_INTERVAL_MS } from "./constants";
 
 declare module "fastify" {
   interface FastifyInstance {
