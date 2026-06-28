@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import type { TraceMessage } from "@llm-lens/types";
 
+definePageMeta({ layout: "app" });
+
 const route = useRoute();
 const idA = String(route.query.a ?? "");
 const idB = String(route.query.b ?? "");
