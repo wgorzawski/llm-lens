@@ -59,6 +59,25 @@ jobs:
           echo "SSH_CMD=ssh -i ~/.ssh/demo_key -p ${{ secrets.DEMO_SSH_PORT }} ${{ secrets.DEMO_SSH_USER }}@${{ secrets.DEMO_SSH_HOST }}" >> $GITHUB_ENV
           echo "RSYNC_SSH=ssh -i ~/.ssh/demo_key -p ${{ secrets.DEMO_SSH_PORT }}" >> $GITHUB_ENV
 
+      # ── create .env files on server from secrets ─────────────────────
+      - name: Create .env files on server
+        run: |
+          cat > /tmp/api.env << EOF
+          JWT_SECRET=${{ secrets.DEMO_JWT_SECRET }}
+          DATABASE_URL=file:./demo.db
+          PORT=3032
+          API_URL=http://localhost:3032
+          FRONTEND_URL=http://localhost:3031
+          EOF
+
+          printf 'PORT=3031\n' > /tmp/web.env
+
+          rsync -az -e "$RSYNC_SSH" /tmp/api.env \
+            ${{ secrets.DEMO_SSH_USER }}@${{ secrets.DEMO_SSH_HOST }}:/home/llm-lens/apps/api/.env
+
+          rsync -az -e "$RSYNC_SSH" /tmp/web.env \
+            ${{ secrets.DEMO_SSH_USER }}@${{ secrets.DEMO_SSH_HOST }}:/home/llm-lens/apps/web/.env
+
       # ── upload Nuxt output ─────────────────────────────────────────────
       - name: Upload web build
         run: |
