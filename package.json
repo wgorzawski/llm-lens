@@ -9,15 +9,21 @@
     "test:e2e": "pnpm --filter @llm-lens/e2e test",
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
-    "prepare": "husky"
+    "prepare": "husky",
+    "demo:api": "DATABASE_URL=file:./demo.db JWT_SECRET=demo-local-secret PORT=3032 AUTH_RATE_LIMIT_MAX=1000 pnpm --filter @llm-lens/api dev",
+    "demo:web": "NUXT_PUBLIC_API_BASE=http://localhost:3032/api NUXT_PUBLIC_DEMO_MODE=true NUXT_IGNORE_LOCK=1 pnpm --filter @llm-lens/web exec nuxt dev --port 3031",
+    "demo:seed": "API_URL=http://localhost:3032 tsx scripts/seed-demo.ts",
+    "demo": "concurrently -n api,web -c blue,green --kill-others-on-fail \"pnpm demo:api\" \"pnpm demo:web\""
   },
   "lint-staged": {
     "apps/web/**/*.{ts,vue}": "apps/web/node_modules/.bin/eslint --fix --no-warn-ignored",
     "apps/api/src/**/*.ts": "apps/api/node_modules/.bin/eslint --fix --no-warn-ignored"
   },
   "devDependencies": {
+    "concurrently": "^9.1.2",
     "husky": "^9.1.7",
     "lint-staged": "^17.0.8",
+    "tsx": "^4.19.4",
     "typescript": "^5.8.3"
   },
   "packageManager": "pnpm@11.1.2",

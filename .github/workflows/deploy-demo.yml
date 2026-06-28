@@ -1,0 +1,126 @@
+name: Deploy Demo
+
+on:
+  workflow_dispatch:
+    inputs:
+      seed:
+        description: "Re-seed demo database (wipes existing data)"
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: deploy-demo
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    name: Build & Deploy to Mikrus
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # ── build shared packages ─────────────────────────────────────────────
+      - name: Build shared packages
+        run: |
+          pnpm --filter @llm-lens/types build
+          pnpm --filter @llm-lens/parsers build
+          pnpm --filter @llm-lens/instrument build
+
+      # ── build Nuxt on CI (memory-heavy — server has only 1 GB) ───────────
+      - name: Build web
+        run: pnpm --filter @llm-lens/web build
+        env:
+          NUXT_PUBLIC_API_BASE: ${{ secrets.DEMO_NUXT_PUBLIC_API_BASE }}
+          NUXT_PUBLIC_DEMO_MODE: "true"
+          NODE_OPTIONS: "--max-old-space-size=6144"
+
+      # ── set up SSH ────────────────────────────────────────────────────────
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEMO_SSH_KEY }}" > ~/.ssh/demo_key
+          chmod 600 ~/.ssh/demo_key
+          ssh-keyscan -p ${{ secrets.DEMO_SSH_PORT }} ${{ secrets.DEMO_SSH_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Define SSH alias
+        run: |
+          echo "SSH_CMD=ssh -i ~/.ssh/demo_key -p ${{ secrets.DEMO_SSH_PORT }} ${{ secrets.DEMO_SSH_USER }}@${{ secrets.DEMO_SSH_HOST }}" >> $GITHUB_ENV
+          echo "RSYNC_SSH=ssh -i ~/.ssh/demo_key -p ${{ secrets.DEMO_SSH_PORT }}" >> $GITHUB_ENV
+
+      # ── upload Nuxt output ─────────────────────────────────────────────
+      - name: Upload web build
+        run: |
+          rsync -az --delete \
+            -e "$RSYNC_SSH" \
+            apps/web/.output/ \
+            ${{ secrets.DEMO_SSH_USER }}@${{ secrets.DEMO_SSH_HOST }}:/home/llmlens/apps/web/.output/
+
+      # ── upload seed script + PM2 config ────────────────────────────────
+      - name: Upload scripts & ecosystem config
+        run: |
+          rsync -az \
+            -e "$RSYNC_SSH" \
+            scripts/ \
+            ${{ secrets.DEMO_SSH_USER }}@${{ secrets.DEMO_SSH_HOST }}:/home/llmlens/scripts/
+
+          rsync -az \
+            -e "$RSYNC_SSH" \
+            ecosystem.config.cjs \
+            ${{ secrets.DEMO_SSH_USER }}@${{ secrets.DEMO_SSH_HOST }}:/home/llmlens/ecosystem.config.cjs
+
+      # ── update server: pull code, install, build API, reload PM2 ─────────
+      - name: Update & restart server
+        run: |
+          $SSH_CMD bash -s << 'ENDSSH'
+            set -e
+            cd /home/llmlens
+
+            echo "→ pulling latest code"
+            git pull origin master
+
+            echo "→ installing dependencies"
+            pnpm install --frozen-lockfile
+
+            echo "→ building shared packages"
+            pnpm --filter @llm-lens/types build
+            pnpm --filter @llm-lens/parsers build
+            pnpm --filter @llm-lens/instrument build
+
+            echo "→ building API"
+            pnpm --filter @llm-lens/api build
+
+            echo "→ reloading PM2"
+            pm2 reload ecosystem.config.cjs --update-env || pm2 start ecosystem.config.cjs
+
+            pm2 save
+          ENDSSH
+
+      # ── optional: re-seed database ────────────────────────────────────────
+      - name: Seed demo database
+        if: ${{ inputs.seed == true }}
+        run: |
+          $SSH_CMD bash -s << 'ENDSSH'
+            set -e
+            cd /home/llmlens
+            echo "→ wiping and re-seeding demo database"
+            rm -f apps/api/demo.db
+            API_URL=http://localhost:3032 npx tsx scripts/seed-demo.ts
+          ENDSSH
+
+      - name: Summary
+        run: |
+          echo "### Deploy complete" >> $GITHUB_STEP_SUMMARY
+          echo "- Seeded: ${{ inputs.seed }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Commit: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
