@@ -85,10 +85,25 @@ export async function initDb(): Promise<void> {
       user_id      TEXT    NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       name         TEXT    NOT NULL,
       key_hash     TEXT    NOT NULL UNIQUE,
+      env          TEXT    NOT NULL DEFAULT 'production',
+      scopes       TEXT    NOT NULL DEFAULT '["read","write"]',
+      status       TEXT    NOT NULL DEFAULT 'active',
+      prefix       TEXT    NOT NULL DEFAULT 'llmlens_sk_',
+      tail         TEXT    NOT NULL DEFAULT '',
       last_used_at INTEGER,
       created_at   INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000)
     )
   `);
+
+  for (const col of [
+    `ALTER TABLE api_keys ADD COLUMN env TEXT NOT NULL DEFAULT 'production'`,
+    `ALTER TABLE api_keys ADD COLUMN scopes TEXT NOT NULL DEFAULT '["read","write"]'`,
+    `ALTER TABLE api_keys ADD COLUMN status TEXT NOT NULL DEFAULT 'active'`,
+    `ALTER TABLE api_keys ADD COLUMN prefix TEXT NOT NULL DEFAULT 'llmlens_sk_'`,
+    `ALTER TABLE api_keys ADD COLUMN tail TEXT NOT NULL DEFAULT ''`,
+  ]) {
+    try { await client.execute(col); } catch { /* already exists */ }
+  }
 
   await client.execute(`
     CREATE TABLE IF NOT EXISTS trace_notes (
@@ -131,6 +146,7 @@ export async function initDb(): Promise<void> {
   for (const col of [
     `ALTER TABLE orgs ADD COLUMN retention_days INTEGER NOT NULL DEFAULT 7`,
     `ALTER TABLE orgs ADD COLUMN logo_url TEXT`,
+    `ALTER TABLE orgs ADD COLUMN webhook_secret TEXT`,
   ]) {
     try { await client.execute(col); } catch { /* already exists */ }
   }

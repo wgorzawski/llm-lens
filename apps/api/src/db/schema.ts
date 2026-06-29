@@ -43,6 +43,11 @@ export const apiKeys = sqliteTable("api_keys", {
   userId: text("user_id").notNull().references(() => users.id),
   name: text("name").notNull(),
   keyHash: text("key_hash").notNull().unique(),
+  env: text("env").notNull().default("production"),
+  scopes: text("scopes").notNull().default('["read","write"]'),
+  status: text("status").notNull().default("active"),
+  prefix: text("prefix").notNull().default("llmlens_sk_"),
+  tail: text("tail").notNull().default(""),
   lastUsedAt: integer("last_used_at"),
   createdAt: integer("created_at").notNull().default(sql`(unixepoch('now') * 1000)`),
 });
@@ -71,6 +76,7 @@ export const orgs = sqliteTable("orgs", {
   defaultEnv: text("default_env").notNull().default("production"),
   retentionDays: integer("retention_days").notNull().default(7),
   logoUrl: text("logo_url"),
+  webhookSecret: text("webhook_secret"),
   createdAt: integer("created_at").notNull().default(sql`(unixepoch('now') * 1000)`),
 });
 
