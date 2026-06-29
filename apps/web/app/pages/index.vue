@@ -40,11 +40,10 @@ const searchQuery = ref("");
 const { theme } = useAppearance();
 
 const escHandler = (e: KeyboardEvent) => { if (e.key === "Escape") selected.value = new Set(); };
-onMounted(async () => {
+onMounted(() => {
   window.addEventListener("keydown", escHandler);
   const presel = useRoute().query.select;
   if (typeof presel === "string") selected.value = new Set([presel]);
-  await fetchTraces();
 });
 onUnmounted(() => window.removeEventListener("keydown", escHandler));
 
@@ -75,6 +74,8 @@ const { page, pending, error, fetchTraces, deleteOne, deleteMany, setStarred } =
   get q() { return debouncedQuery.value || undefined; },
   get sort() { return sort.value; },
 });
+
+await fetchTraces();
 
 const traceCount = useState("trace-count", () => 0);
 watch(page, () => { traceCount.value = page.value.total; }, { immediate: true });

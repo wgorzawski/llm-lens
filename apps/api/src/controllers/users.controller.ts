@@ -1,13 +1,20 @@
-import { Controller, GET, PATCH, POST } from "fastify-decorators";
+import { Controller, GET, PATCH, POST, DELETE } from "fastify-decorators";
 import { BCRYPT_ROUNDS } from "../constants";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import bcrypt from "bcryptjs";
 import QRCode from "qrcode";
+import { createWriteStream, mkdirSync } from "node:fs";
+import { unlink } from "node:fs/promises";
+import path from "node:path";
+import { pipeline } from "node:stream/promises";
 import {
   findUserById,
+  findUserByEmail,
   findUserByHandle,
   updateProfile,
   updatePasswordHash,
+  updateEmail,
+  updateAvatarUrl,
   updatePreferences,
   setPendingTotpSecret,
   enableTotp,
@@ -31,6 +38,10 @@ async function verifyTotpOrRecovery(user: UserRow, code: string): Promise<boolea
   return consumeRecoveryCode(user.id, hashRecoveryCode(code));
 }
 
+const UPLOADS_DIR = path.resolve(process.env["UPLOADS_DIR"] ?? "./uploads");
+const AVATARS_DIR = path.join(UPLOADS_DIR, "avatars");
+mkdirSync(AVATARS_DIR, { recursive: true });
+
 function toMe(user: UserRow) {
   return {
     id: user.id,
@@ -44,6 +55,7 @@ function toMe(user: UserRow) {
     dateFormat: user.dateFormat,
     preferences: JSON.parse(user.preferences),
     totpEnabled: user.totpEnabled,
+    avatarUrl: user.avatarUrl ?? null,
   };
 }
 
@@ -112,6 +124,61 @@ export class UsersController {
     const preferences = await updatePreferences(request.user.userId, request.body ?? {});
     if (!preferences) return reply.status(404).send({ error: "User not found" });
     return { preferences };
+  }
+
+  @PATCH("/me/email")
+  async changeEmail(
+    request: FastifyRequest<{ Body: { email: string; password: string } }>,
+    reply: FastifyReply
+  ) {
+    const { email, password } = request.body;
+    if (!email || !password) return reply.status(400).send({ error: "email and password are required" });
+
+    const user = await findUserById(request.user.userId);
+    if (!user) return reply.status(404).send({ error: "User not found" });
+
+    const valid = await bcrypt.compare(password, user.passwordHash);
+    if (!valid) return reply.status(400).send({ error: "Password is incorrect" });
+
+    const existing = await findUserByEmail(email.trim().toLowerCase());
+    if (existing && existing.id !== user.id) return reply.status(409).send({ error: "Email is already in use" });
+
+    const updated = await updateEmail(user.id, email.trim().toLowerCase());
+    if (!updated) return reply.status(404).send({ error: "User not found" });
+    return toMe(updated);
+  }
+
+  @POST("/me/avatar")
+  async uploadAvatar(request: FastifyRequest, reply: FastifyReply) {
+    const user = await findUserById(request.user.userId);
+    if (!user) return reply.status(404).send({ error: "User not found" });
+
+    const data = await request.file();
+    if (!data) return reply.status(400).send({ error: "No file provided" });
+
+    const ext = path.extname(data.filename).toLowerCase() || ".jpg";
+    const allowed = [".jpg", ".jpeg", ".png", ".gif", ".webp"];
+    if (!allowed.includes(ext)) return reply.status(400).send({ error: "File type not allowed" });
+
+    const filename = `${user.id}${ext}`;
+    const dest = path.join(AVATARS_DIR, filename);
+    await pipeline(data.file, createWriteStream(dest));
+
+    const avatarUrl = `/uploads/avatars/${filename}`;
+    await updateAvatarUrl(user.id, avatarUrl);
+    return { avatarUrl };
+  }
+
+  @DELETE("/me/avatar")
+  async deleteAvatar(request: FastifyRequest, reply: FastifyReply) {
+    const user = await findUserById(request.user.userId);
+    if (!user) return reply.status(404).send({ error: "User not found" });
+    if (user.avatarUrl) {
+      const filePath = path.join(UPLOADS_DIR, user.avatarUrl.replace("/uploads/", ""));
+      await unlink(filePath).catch(() => null);
+    }
+    await updateAvatarUrl(user.id, null);
+    return reply.status(204).send();
   }
 
   @POST("/me/2fa/setup")

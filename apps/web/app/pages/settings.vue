@@ -26,7 +26,6 @@ const navGroups = [
     items: [
       { id: "org",     label: "Organization",   icon: "building" },
       { id: "members", label: "Members",        icon: "users" },
-      { id: "billing", label: "Billing",        icon: "card" },
       { id: "data",    label: "Data retention", icon: "database" },
     ],
   },
@@ -75,7 +74,6 @@ const navGroups = [
       <SettingsAppearance    v-else-if="navSection === 'appearance'" />
       <SettingsOrg           v-else-if="navSection === 'org'" />
       <SettingsMembers       v-else-if="navSection === 'members'" />
-      <SettingsBilling       v-else-if="navSection === 'billing'" />
       <SettingsData          v-else-if="navSection === 'data'" />
       <SettingsDomain        v-else-if="navSection === 'domain'" />
       <SettingsDanger        v-else-if="navSection === 'danger'" />

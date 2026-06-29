@@ -10,6 +10,7 @@ export interface Me {
   dateFormat: string;
   preferences: Record<string, unknown>;
   totpEnabled: boolean;
+  avatarUrl: string | null;
 }
 
 export interface ProfileUpdate {
@@ -51,5 +52,24 @@ export function useMe() {
     return res.preferences;
   }
 
-  return { me, pending, fetchMe, updateProfile, updatePassword, updatePreferences };
+  async function changeEmail(email: string, password: string): Promise<Me> {
+    const updated = await apiFetch<Me>("/users/me/email", { method: "PATCH", body: { email, password } });
+    me.value = { ...me.value, ...updated } as Me;
+    return updated;
+  }
+
+  async function uploadAvatar(file: File): Promise<string> {
+    const form = new FormData();
+    form.append("file", file);
+    const res = await apiFetch<{ avatarUrl: string }>("/users/me/avatar", { method: "POST", body: form });
+    if (me.value) me.value.avatarUrl = res.avatarUrl;
+    return res.avatarUrl;
+  }
+
+  async function removeAvatar(): Promise<void> {
+    await apiFetch("/users/me/avatar", { method: "DELETE" });
+    if (me.value) me.value.avatarUrl = null;
+  }
+
+  return { me, pending, fetchMe, updateProfile, updatePassword, updatePreferences, changeEmail, uploadAvatar, removeAvatar };
 }

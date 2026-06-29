@@ -1,11 +1,18 @@
 <script setup lang="ts">
 const { token } = useAuth();
 const { org, updateOrg } = useOrg();
+const { me, updatePreferences } = useMe();
 
 const retention = ref(org.value?.retentionDays ?? 7);
 const savingRetention = ref(false);
-const maskPII = ref(true);
-const shareData = ref(false);
+const maskPII = computed({
+  get: () => (me.value?.preferences?.maskPII as boolean | undefined) ?? true,
+  set: (val: boolean) => { void updatePreferences({ maskPII: val }); },
+});
+const shareData = computed({
+  get: () => (me.value?.preferences?.shareData as boolean | undefined) ?? false,
+  set: (val: boolean) => { void updatePreferences({ shareData: val }); },
+});
 
 async function setRetention(days: number) {
   savingRetention.value = true;
@@ -71,7 +78,7 @@ async function downloadUsageExport() {
           <div class="set-row-hint">Automatically redact emails, phone numbers, and credit cards in trace payloads.</div>
         </div>
         <div class="set-row-control">
-          <button class="toggle" :class="{ on: maskPII }" role="switch" @click="maskPII = !maskPII"><span class="thumb" /></button>
+          <button class="toggle" :class="{ on: maskPII }" role="switch" @click="maskPII = !maskPII as boolean"><span class="thumb" /></button>
         </div>
       </div>
       <div class="set-row">
@@ -80,7 +87,7 @@ async function downloadUsageExport() {
           <div class="set-row-hint">Helps improve provider models. We never share keys or message bodies.</div>
         </div>
         <div class="set-row-control">
-          <button class="toggle" :class="{ on: shareData }" role="switch" @click="shareData = !shareData"><span class="thumb" /></button>
+          <button class="toggle" :class="{ on: shareData }" role="switch" @click="shareData = !shareData as boolean"><span class="thumb" /></button>
         </div>
       </div>
     </div>

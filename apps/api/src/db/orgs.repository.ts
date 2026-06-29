@@ -11,6 +11,10 @@ export async function findOrgBySlugExcluding(slug: string, excludeSlug: string) 
   return rows[0] ?? null;
 }
 
+export async function updateLogoUrl(slug: string, logoUrl: string | null) {
+  await db.update(orgs).set({ logoUrl }).where(eq(orgs.slug, slug));
+}
+
 export interface OrgUpdate {
   slug?: string;
   name?: string;
@@ -43,6 +47,10 @@ export async function upsertOrg(currentSlug: string, update: OrgUpdate) {
   }
   await db.update(orgs).set(update).where(eq(orgs.slug, currentSlug));
   return getOrg(currentSlug);
+}
+
+export async function deleteOrg(slug: string) {
+  await db.delete(orgs).where(eq(orgs.slug, slug));
 }
 
 export async function listAllOrgs() {

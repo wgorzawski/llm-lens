@@ -2,7 +2,7 @@
 import type { UnifiedTrace } from "@llm-lens/types";
 import { extractMessageSnippet } from "@llm-lens/parsers";
 
-defineProps<{
+const props = defineProps<{
   traces: UnifiedTrace[];
   selected: Set<string>;
   pending: boolean;
@@ -19,6 +19,29 @@ const SKEL = Array.from({ length: 12 });
 function getSnippet(t: UnifiedTrace): string {
   return extractMessageSnippet(t.messages, 140);
 }
+
+const { vimNav } = useAppearance();
+const focusedIndex = ref(-1);
+
+watch(() => props.traces, () => { focusedIndex.value = -1; });
+
+function onKeydown(e: KeyboardEvent) {
+  if (!vimNav.value || props.pending || props.traces.length === 0) return;
+  if ((e.target as HTMLElement).tagName === "INPUT" || (e.target as HTMLElement).tagName === "TEXTAREA") return;
+  if (e.key === "j") {
+    e.preventDefault();
+    focusedIndex.value = Math.min(focusedIndex.value + 1, props.traces.length - 1);
+  } else if (e.key === "k") {
+    e.preventDefault();
+    focusedIndex.value = Math.max(focusedIndex.value - 1, 0);
+  } else if (e.key === "Enter" && focusedIndex.value >= 0) {
+    const t = props.traces[focusedIndex.value];
+    if (t) emit("row-click", t.id);
+  }
+}
+
+onMounted(() => document.addEventListener("keydown", onKeydown));
+onUnmounted(() => document.removeEventListener("keydown", onKeydown));
 </script>
 
 <template>
@@ -60,9 +83,9 @@ function getSnippet(t: UnifiedTrace): string {
     <!-- actual rows -->
     <template v-else>
       <div
-        v-for="t in traces" :key="t.id"
+        v-for="(t, i) in traces" :key="t.id"
         class="list-row"
-        :class="{ selected: selected.has(t.id) }"
+        :class="{ selected: selected.has(t.id), focused: vimNav && i === focusedIndex }"
         @click="emit('row-click', t.id)"
       >
         <div
@@ -97,7 +120,7 @@ function getSnippet(t: UnifiedTrace): string {
         </div>
         <div class="col-msg" style="color:var(--success)">{{ fmtUsd(t.metadata.costUsd) }}</div>
         <div class="col-msg" style="color:var(--text-2)">{{ t.messages.length }}</div>
-        <div class="col-date">{{ getRelative(t.timestamp) }}</div>
+        <div class="col-date" data-allow-mismatch="text">{{ getRelative(t.timestamp) }}</div>
         <div class="col-actions">
           <ActionMenu
             :items="[

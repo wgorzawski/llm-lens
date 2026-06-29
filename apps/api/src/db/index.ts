@@ -30,6 +30,7 @@ export async function initDb(): Promise<void> {
     `ALTER TABLE users ADD COLUMN locale TEXT NOT NULL DEFAULT 'en-US'`,
     `ALTER TABLE users ADD COLUMN date_format TEXT NOT NULL DEFAULT 'iso'`,
     `ALTER TABLE users ADD COLUMN preferences TEXT NOT NULL DEFAULT '{}'`,
+    `ALTER TABLE users ADD COLUMN avatar_url TEXT`,
     `ALTER TABLE users ADD COLUMN totp_secret TEXT`,
     `ALTER TABLE users ADD COLUMN totp_enabled INTEGER NOT NULL DEFAULT 0`,
     `ALTER TABLE users ADD COLUMN totp_recovery_codes TEXT NOT NULL DEFAULT '[]'`,
@@ -129,6 +130,7 @@ export async function initDb(): Promise<void> {
 
   for (const col of [
     `ALTER TABLE orgs ADD COLUMN retention_days INTEGER NOT NULL DEFAULT 7`,
+    `ALTER TABLE orgs ADD COLUMN logo_url TEXT`,
   ]) {
     try { await client.execute(col); } catch { /* already exists */ }
   }

@@ -167,6 +167,16 @@ export async function deleteTraces(ids: string[], userId: string): Promise<numbe
   return result.rowsAffected ?? 0;
 }
 
+export async function deleteAllUserTraces(userId: string): Promise<number> {
+  const rows = await db.select({ id: traces.id }).from(traces).where(eq(traces.userId, userId));
+  if (rows.length === 0) return 0;
+  await db.delete(traces).where(eq(traces.userId, userId));
+  for (const row of rows) {
+    await client.execute({ sql: `DELETE FROM traces_fts WHERE id = ?`, args: [row.id] });
+  }
+  return rows.length;
+}
+
 export async function* iterateAllTraces(userId: string): AsyncGenerator<UnifiedTrace> {
   const pageSize = EXPORT_PAGE_SIZE;
   let offset = 0;

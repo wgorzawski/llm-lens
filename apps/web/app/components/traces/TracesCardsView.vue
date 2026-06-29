@@ -56,7 +56,7 @@ function getSnippet(t: UnifiedTrace): string {
             </div>
             <div class="card-row">
               <span class="card-title">{{ traceName(t) }}</span>
-              <span class="card-date">{{ formatDate(t.timestamp) }}</span>
+              <span class="card-date" data-allow-mismatch="text">{{ formatDate(t.timestamp) }}</span>
             </div>
           </div>
           <div style="display:flex;gap:2px;align-items:center">

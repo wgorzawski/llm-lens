@@ -1,8 +1,5 @@
 <script setup lang="ts">
-const { theme: appTheme, accent: appAccent, density: appDensity } = useAppearance();
-const appLigatures = ref(true);
-const appShowKbd = ref(true);
-const appVimNav = ref(false);
+const { theme: appTheme, accent: appAccent, density: appDensity, ligatures: appLigatures, showKbd: appShowKbd, vimNav: appVimNav } = useAppearance();
 
 const accentColors = [
   { v: "#5b8dff", name: "Blue" },
@@ -25,7 +22,7 @@ const accentColors = [
           <div class="segmented">
             <button :class="{ active: appTheme === 'dark' }"  @click="appTheme = 'dark'">Dark</button>
             <button :class="{ active: appTheme === 'light' }" @click="appTheme = 'light'">Light</button>
-            <button>Auto</button>
+            <button :class="{ active: appTheme === 'auto' }"  @click="appTheme = 'auto'">Auto</button>
           </div>
         </div>
       </div>

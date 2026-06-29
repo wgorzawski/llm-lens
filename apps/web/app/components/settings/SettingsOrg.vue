@@ -1,5 +1,23 @@
 <script setup lang="ts">
-const { org, updateOrg } = useOrg();
+const { org, updateOrg, uploadLogo, removeLogo } = useOrg();
+const apiBase = useRuntimeConfig().public.apiBase as string;
+
+const logoInput = ref<HTMLInputElement | null>(null);
+const logoError = ref<string | null>(null);
+
+async function onLogoChange(e: Event) {
+  const file = (e.target as HTMLInputElement).files?.[0];
+  if (!file) return;
+  logoError.value = null;
+  try { await uploadLogo(file); }
+  catch (err) { logoError.value = getErrorMessage(err); }
+}
+
+async function onRemoveLogo() {
+  logoError.value = null;
+  try { await removeLogo(); }
+  catch (err) { logoError.value = getErrorMessage(err); }
+}
 
 const orgName = ref(org.value?.name ?? "");
 const orgSlug = ref(org.value?.slug ?? "");
@@ -55,8 +73,14 @@ async function saveOrg() {
           <div class="set-row-hint">Shown in the sidebar and on shared trace links.</div>
         </div>
         <div class="set-row-control" style="gap:8px">
-          <div class="org-logo">Y</div>
-          <button class="s-btn">Upload</button>
+          <div class="org-logo">
+            <img v-if="org?.logoUrl" :src="`${apiBase.replace('/api', '')}${org.logoUrl}`" alt="org logo" style="width:100%;height:100%;object-fit:contain;border-radius:4px" >
+            <template v-else>{{ (org?.name || 'O')[0]?.toUpperCase() }}</template>
+          </div>
+          <input ref="logoInput" type="file" accept=".jpg,.jpeg,.png,.gif,.webp,.svg" style="display:none" @change="onLogoChange" >
+          <button class="s-btn" @click="logoInput?.click()">Upload</button>
+          <button v-if="org?.logoUrl" class="s-btn" @click="onRemoveLogo">Remove</button>
+          <span v-if="logoError" class="set-error" style="margin-top:4px">{{ logoError }}</span>
         </div>
       </div>
       <div class="set-row">
@@ -89,7 +113,7 @@ async function saveOrg() {
       <div class="set-row">
         <div class="set-row-label">
           <div class="set-row-label-text">Google Workspace SSO</div>
-          <div class="set-row-hint">Restrict sign-in to {{ orgSlug }}.fun email addresses.</div>
+          <div class="set-row-hint">Restrict sign-in to email addresses from your organization's domain.</div>
         </div>
         <div class="set-row-control"><button class="s-btn" disabled>Enable</button></div>
       </div>

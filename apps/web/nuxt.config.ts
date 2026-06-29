@@ -1,7 +1,7 @@
 export default defineNuxtConfig({
   compatibilityDate: "2026-05-14",
   devtools: { enabled: true },
-  modules: ["@unocss/nuxt", "@vueuse/nuxt", "@nuxt/eslint"],
+  modules: ["@unocss/nuxt", "@vueuse/nuxt", "@nuxt/eslint", "@nuxt/hints"],
   typescript: { strict: true },
   css: ["~/assets/css/tokens.css", "~/assets/css/settings.css", "~/assets/css/traces.css"],
   app: {

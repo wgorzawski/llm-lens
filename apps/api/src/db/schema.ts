@@ -15,6 +15,7 @@ export const users = sqliteTable("users", {
   locale: text("locale").notNull().default("en-US"),
   dateFormat: text("date_format").notNull().default("iso"),
   preferences: text("preferences").notNull().default("{}"),
+  avatarUrl: text("avatar_url"),
   totpSecret: text("totp_secret"),
   totpEnabled: integer("totp_enabled", { mode: "boolean" }).notNull().default(false),
   totpRecoveryCodes: text("totp_recovery_codes").notNull().default("[]"),
@@ -69,6 +70,7 @@ export const orgs = sqliteTable("orgs", {
   name: text("name").notNull(),
   defaultEnv: text("default_env").notNull().default("production"),
   retentionDays: integer("retention_days").notNull().default(7),
+  logoUrl: text("logo_url"),
   createdAt: integer("created_at").notNull().default(sql`(unixepoch('now') * 1000)`),
 });
 

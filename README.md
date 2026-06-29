@@ -176,7 +176,7 @@ const response = await client.messages.create({
 });
 ```
 
-The API key is either a JWT token (copy from browser `localStorage` key `llm_lens_token` after OAuth login) or a `llmlens_sk_…` key generated in the settings page.
+The API key is either a JWT token (copy it from **Settings → API keys** in the UI, or read the `auth_token` cookie from your browser's DevTools after signing in) or a `llmlens_sk_…` key generated in the settings page.
 
 ### Options
 
@@ -341,8 +341,12 @@ GET /health
 ### Run tests
 
 ```bash
+# Unit tests (parsers)
 pnpm --filter @llm-lens/parsers test
 # 60 tests: 15 Anthropic · 20 OpenAI · 25 Vercel AI
+
+# End-to-end tests (requires running API + web dev servers)
+pnpm --filter @llm-lens/e2e test
 ```
 
 ### Add a new provider parser

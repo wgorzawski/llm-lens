@@ -19,6 +19,20 @@ async function toggleNotif(key: keyof typeof notifs) {
 }
 
 const slackWebhookUrl = ref((me.value?.preferences?.slackWebhookUrl as string) || "");
+const pagerdutyKey = ref((me.value?.preferences?.pagerdutyKey as string) || "");
+const pagerdutyConnected = computed(() => !!pagerdutyKey.value);
+const pagerdutySaving = ref(false);
+
+async function savePagerduty() {
+  pagerdutySaving.value = true;
+  try { await updatePreferences({ pagerdutyKey: pagerdutyKey.value }); }
+  finally { pagerdutySaving.value = false; }
+}
+
+async function disconnectPagerduty() {
+  pagerdutyKey.value = "";
+  await updatePreferences({ pagerdutyKey: "" });
+}
 const slackConnected = computed(() => !!slackWebhookUrl.value);
 const slackSaving = ref(false);
 const slackTestResult = ref<string | null>(null);
@@ -49,6 +63,37 @@ async function testSlack() {
     slackTestResult.value = res.ok ? "Test message sent." : `Slack responded with ${res.status}`;
   } catch (err) {
     slackTestResult.value = getErrorMessage(err);
+  }
+}
+
+const outboundWebhookUrl = ref((me.value?.preferences?.outboundWebhookUrl as string) || "");
+const webhookConnected = computed(() => !!outboundWebhookUrl.value);
+const webhookSaving = ref(false);
+const webhookTestResult = ref<string | null>(null);
+
+async function saveWebhook() {
+  webhookSaving.value = true;
+  webhookTestResult.value = null;
+  try { await updatePreferences({ outboundWebhookUrl: outboundWebhookUrl.value }); }
+  finally { webhookSaving.value = false; }
+}
+
+async function disconnectWebhook() {
+  outboundWebhookUrl.value = "";
+  await updatePreferences({ outboundWebhookUrl: "" });
+}
+
+async function testWebhook() {
+  webhookTestResult.value = null;
+  try {
+    const res = await fetch(outboundWebhookUrl.value, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ event: "trace.test", trace: null }),
+    });
+    webhookTestResult.value = res.ok ? "Test payload sent." : `Endpoint responded with ${res.status}`;
+  } catch (err) {
+    webhookTestResult.value = getErrorMessage(err);
   }
 }
 </script>
@@ -163,20 +208,30 @@ async function testSlack() {
       <div v-if="slackTestResult" class="set-row-hint" style="padding:0 20px 12px">{{ slackTestResult }}</div>
       <div class="set-row">
         <div class="set-row-label">
-          <div class="set-row-label-text">PagerDuty <span class="cs-badge">coming soon</span></div>
+          <div class="set-row-label-text">PagerDuty</div>
           <div class="set-row-hint">Page on-call for production alerts.</div>
         </div>
-        <div class="set-row-control"><button class="s-btn" disabled>Connect PagerDuty</button></div>
+        <div class="set-row-control" style="gap:8px">
+          <span v-if="pagerdutyConnected" class="kpill ok"><span class="dot ok" /> connected</span>
+          <div class="field-input"><input v-model="pagerdutyKey" type="password" placeholder="PagerDuty Events API v2 integration key" class="mono" ></div>
+          <button class="s-btn" :disabled="pagerdutySaving" @click="savePagerduty">{{ pagerdutySaving ? "Saving…" : "Save" }}</button>
+          <button v-if="pagerdutyConnected" class="s-btn danger" @click="disconnectPagerduty">Disconnect</button>
+        </div>
       </div>
       <div class="set-row">
         <div class="set-row-label">
           <div class="set-row-label-text">Webhook</div>
-          <div class="set-row-hint">POST notifications to your endpoint.</div>
+          <div class="set-row-hint">{{ webhookConnected ? 'Outbound webhook configured. POST on every new trace.' : 'POST new-trace payloads to your endpoint.' }}</div>
         </div>
-        <div class="set-row-control">
-          <div class="static-val mono">https://hooks.example.com/llmlens</div>
+        <div class="set-row-control" style="gap:8px">
+          <span v-if="webhookConnected" class="kpill ok"><span class="dot ok" /> connected</span>
+          <div class="field-input"><input v-model="outboundWebhookUrl" type="text" placeholder="https://your-endpoint.com/webhook" class="mono" ></div>
+          <button class="s-btn" :disabled="webhookSaving" @click="saveWebhook">{{ webhookSaving ? "Saving…" : "Save" }}</button>
+          <button v-if="webhookConnected" class="s-btn" @click="testWebhook">Send test</button>
+          <button v-if="webhookConnected" class="s-btn danger" @click="disconnectWebhook">Disconnect</button>
         </div>
       </div>
+      <div v-if="webhookTestResult" class="set-row-hint" style="padding:0 20px 12px">{{ webhookTestResult }}</div>
     </div>
   </section>
 </template>

@@ -3,7 +3,11 @@ import Fastify from "fastify";
 import cors from "@fastify/cors";
 import jwt from "@fastify/jwt";
 import rateLimit from "@fastify/rate-limit";
+import multipart from "@fastify/multipart";
+import staticPlugin from "@fastify/static";
 import oauth2Plugin, { type OAuth2Namespace } from "@fastify/oauth2";
+import { mkdirSync } from "node:fs";
+import path from "node:path";
 import { bootstrap } from "fastify-decorators";
 import { initDb } from "./db/index";
 import { TracesController } from "./controllers/traces.controller";
@@ -31,6 +35,10 @@ const apiUrl = process.env["API_URL"] ?? "http://localhost:3001";
 
 await server.register(cors, { origin: true, methods: ["GET", "HEAD", "POST", "PATCH", "PUT", "DELETE"] });
 await server.register(rateLimit, { global: false });
+await server.register(multipart, { limits: { fileSize: 2 * 1024 * 1024 } });
+const uploadsDir = path.resolve(process.env["UPLOADS_DIR"] ?? "./uploads");
+mkdirSync(uploadsDir, { recursive: true });
+await server.register(staticPlugin, { root: uploadsDir, prefix: "/uploads/" });
 const jwtSecret = process.env["JWT_SECRET"];
 if (!jwtSecret) throw new Error("JWT_SECRET environment variable is required");
 

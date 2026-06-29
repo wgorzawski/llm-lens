@@ -1,13 +1,16 @@
 <script setup lang="ts">
 import type { TotpSetup } from "~/composables/useTwoFactor";
 
-const { me, fetchMe, updatePassword } = useMe();
+const { me, fetchMe, updatePassword, updatePreferences } = useMe();
 const { setup: setupTwoFactor, verify: verifyTwoFactor, disable: disableTwoFactor, regenerateRecoveryCodes } = useTwoFactor();
 const { sessions, fetchSessions, revoke: revokeSession } = useSessions();
 await fetchSessions();
 
 const twoFA = computed(() => me.value?.totpEnabled ?? false);
-const signinAlerts = ref(true);
+const signinAlerts = computed({
+  get: () => (me.value?.preferences?.signinAlerts as boolean | undefined) ?? true,
+  set: (val: boolean) => { void updatePreferences({ signinAlerts: val }); },
+});
 
 const totpSetup = ref<TotpSetup | null>(null);
 const totpVerifyCode = ref("");

@@ -66,7 +66,7 @@ function onItemClick(to: string | null) {
           <AppIcon :name="it.icon" :size="14" />
           <template v-if="!collapsed">
             <span>{{ it.label }}</span>
-            <span v-if="it.id === 'traces'" class="sb-item-badge">{{ fmtN(traceCount) }}</span>
+            <span v-if="it.id === 'traces'" class="sb-item-badge" data-allow-mismatch="text">{{ fmtN(traceCount) }}</span>
           </template>
         </div>
       </div>

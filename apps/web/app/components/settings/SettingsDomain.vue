@@ -10,7 +10,7 @@
     <div class="set-section-body">
       <div class="set-row">
         <div class="set-row-label"><div class="set-row-label-text">Domain</div></div>
-        <div class="set-row-control"><div class="field-input"><input type="text" placeholder="lens.yumio.fun" class="mono" ></div></div>
+        <div class="set-row-control"><div class="field-input"><input type="text" placeholder="lens.llmlens.dev" class="mono" ></div></div>
       </div>
       <div class="set-row">
         <div class="set-row-label">

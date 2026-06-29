@@ -88,6 +88,7 @@
 }
 .list-row:hover { background: var(--bg-2); }
 .list-row.selected { background: var(--accent-bg); }
+.list-row.focused { outline: 2px solid var(--accent); outline-offset: -2px; background: var(--accent-bg); }
 .list-row.head {
   font-size: 10px; text-transform: uppercase;
   letter-spacing: 0.06em; color: var(--text-2); font-weight: 500;

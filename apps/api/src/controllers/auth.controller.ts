@@ -5,6 +5,7 @@ import { createUser, findUserByEmail, findUserById, findOrCreateOAuthUser, consu
 import { BCRYPT_ROUNDS, PENDING_2FA_TOKEN_TTL, OAUTH_FETCH_TIMEOUT_MS } from "../constants";
 import { createSession } from "../db/sessions.repository";
 import { verifyTotpCode, hashRecoveryCode } from "../services/totp";
+import { sendSigninAlert } from "../services/email";
 
 declare module "@fastify/jwt" {
   interface FastifyJWT {
@@ -89,6 +90,11 @@ export class AuthController {
     const ua = request.headers["user-agent"] ?? "unknown";
     void createSession(user.id, deviceFromUserAgent(ua), request.ip, ua)
       .catch((err: unknown) => request.server.log.warn({ err }, "Failed to create session"));
+    const prefs: Record<string, unknown> = JSON.parse(user.preferences);
+    if (prefs["signinAlerts"] !== false) {
+      void sendSigninAlert(user.email, request.ip, ua)
+        .catch((err: unknown) => request.server.log.warn({ err }, "Failed to send signin alert"));
+    }
     return { token, user: { id: user.id, email: user.email } };
   }
 

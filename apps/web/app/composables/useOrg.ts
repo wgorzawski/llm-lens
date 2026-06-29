@@ -3,6 +3,7 @@ export interface Org {
   name: string;
   defaultEnv: string;
   retentionDays: number;
+  logoUrl: string | null;
 }
 
 export interface OrgUpdate {
@@ -27,5 +28,18 @@ export function useOrg() {
     return updated;
   }
 
-  return { org, fetchOrg, updateOrg };
+  async function uploadLogo(file: File): Promise<string> {
+    const form = new FormData();
+    form.append("file", file);
+    const res = await apiFetch<{ logoUrl: string }>("/orgs/me/logo", { method: "POST", body: form });
+    if (org.value) org.value.logoUrl = res.logoUrl;
+    return res.logoUrl;
+  }
+
+  async function removeLogo(): Promise<void> {
+    await apiFetch("/orgs/me/logo", { method: "DELETE" });
+    if (org.value) org.value.logoUrl = null;
+  }
+
+  return { org, fetchOrg, updateOrg, uploadLogo, removeLogo };
 }

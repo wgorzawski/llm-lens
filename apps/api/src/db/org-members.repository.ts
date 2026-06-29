@@ -119,3 +119,7 @@ export async function removeMember(id: string, orgSlug: string) {
     .where(and(eq(orgMembers.id, id), eq(orgMembers.orgSlug, orgSlug)));
   return (result.rowsAffected ?? 0) > 0;
 }
+
+export async function removeAllOrgMembers(orgSlug: string) {
+  await db.delete(orgMembers).where(eq(orgMembers.orgSlug, orgSlug));
+}

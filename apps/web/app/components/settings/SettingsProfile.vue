@@ -1,6 +1,51 @@
 <script setup lang="ts">
-const { me, updateProfile } = useMe();
+const { me, updateProfile, changeEmail, uploadAvatar, removeAvatar } = useMe();
 const { members } = useOrgMembers();
+const apiBase = useRuntimeConfig().public.apiBase as string;
+
+// ── avatar ────────────────────────────────────────────────────────────────────
+const avatarInput = ref<HTMLInputElement | null>(null);
+const avatarError = ref<string | null>(null);
+
+async function onAvatarChange(e: Event) {
+  const file = (e.target as HTMLInputElement).files?.[0];
+  if (!file) return;
+  avatarError.value = null;
+  try { await uploadAvatar(file); }
+  catch (err) { avatarError.value = getErrorMessage(err); }
+}
+
+async function onRemoveAvatar() {
+  avatarError.value = null;
+  try { await removeAvatar(); }
+  catch (err) { avatarError.value = getErrorMessage(err); }
+}
+
+// ── email change ──────────────────────────────────────────────────────────────
+const showEmailForm = ref(false);
+const newEmail = ref("");
+const emailPassword = ref("");
+const savingEmail = ref(false);
+const emailError = ref<string | null>(null);
+const emailSaved = ref(false);
+
+async function submitEmailChange() {
+  emailError.value = null;
+  emailSaved.value = false;
+  savingEmail.value = true;
+  try {
+    await changeEmail(newEmail.value, emailPassword.value);
+    emailSaved.value = true;
+    showEmailForm.value = false;
+    newEmail.value = "";
+    emailPassword.value = "";
+    setTimeout(() => (emailSaved.value = false), 2000);
+  } catch (err) {
+    emailError.value = getErrorMessage(err);
+  } finally {
+    savingEmail.value = false;
+  }
+}
 
 const displayName = ref(me.value?.displayName || "");
 const handle = ref(me.value?.handle || "");
@@ -46,11 +91,16 @@ async function saveProfile() {
     </div>
     <div class="set-section-body">
       <div class="profile-head">
-        <div class="profile-avatar">W</div>
+        <div class="profile-avatar">
+          <img v-if="me?.avatarUrl" :src="`${apiBase.replace('/api', '')}${me.avatarUrl}`" alt="avatar" style="width:100%;height:100%;border-radius:50%;object-fit:cover" >
+          <template v-else>{{ (me?.displayName || me?.email || 'U')[0]?.toUpperCase() }}</template>
+        </div>
         <div class="profile-avatar-actions">
-          <button class="s-btn">Upload photo</button>
-          <button class="s-btn">Remove</button>
+          <input ref="avatarInput" type="file" accept=".jpg,.jpeg,.png,.gif,.webp" style="display:none" @change="onAvatarChange" >
+          <button class="s-btn" @click="avatarInput?.click()">Upload photo</button>
+          <button v-if="me?.avatarUrl" class="s-btn" @click="onRemoveAvatar">Remove</button>
           <div class="set-row-hint" style="margin-top:4px">JPG, PNG, or GIF · max 2MB</div>
+          <span v-if="avatarError" class="set-error">{{ avatarError }}</span>
         </div>
       </div>
 
@@ -82,11 +132,21 @@ async function saveProfile() {
           <div class="set-row-label-text">Email</div>
           <div class="set-row-hint" style="color:var(--success)">● Verified</div>
         </div>
-        <div class="set-row-control">
+        <div class="set-row-control" style="flex-direction:column;align-items:stretch;gap:8px">
           <div class="field-input">
             <input :value="me?.email" readonly class="mono" >
-            <span class="trail"><button class="link-btn">Change</button></span>
+            <span class="trail"><button class="link-btn" @click="showEmailForm = !showEmailForm">Change</button></span>
           </div>
+          <template v-if="showEmailForm">
+            <div class="field-input"><input v-model="newEmail" type="email" placeholder="New email address" ></div>
+            <div class="field-input"><input v-model="emailPassword" type="password" placeholder="Current password to confirm" ></div>
+            <div style="display:flex;gap:8px;align-items:center">
+              <button class="s-btn primary" :disabled="savingEmail" @click="submitEmailChange">{{ savingEmail ? "Saving…" : "Save new email" }}</button>
+              <button class="s-btn" @click="showEmailForm = false; emailError = null">Cancel</button>
+            </div>
+            <span v-if="emailError" class="set-error">{{ emailError }}</span>
+            <span v-else-if="emailSaved" class="set-saved">Email updated</span>
+          </template>
         </div>
       </div>
 

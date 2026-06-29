@@ -80,6 +80,15 @@ export async function disableTotp(userId: string) {
     .where(eq(users.id, userId));
 }
 
+export async function updateEmail(userId: string, email: string) {
+  await db.update(users).set({ email }).where(eq(users.id, userId));
+  return findUserById(userId);
+}
+
+export async function updateAvatarUrl(userId: string, avatarUrl: string | null) {
+  await db.update(users).set({ avatarUrl }).where(eq(users.id, userId));
+}
+
 export async function consumeRecoveryCode(userId: string, codeHash: string): Promise<boolean> {
   const user = await findUserById(userId);
   if (!user) return false;

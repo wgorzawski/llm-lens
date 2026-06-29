@@ -94,7 +94,7 @@ function latBarWidth(ms: number | undefined): string {
                 <span v-if="toolCallCount(t) > 0" class="marker tool">{{ toolCallCount(t) }}</span>
               </span>
             </td>
-            <td class="num" style="color:var(--text-2);font-size:11px;font-family:var(--font-mono)">
+            <td class="num" style="color:var(--text-2);font-size:11px;font-family:var(--font-mono)" data-allow-mismatch="text">
               {{ getRelative(t.timestamp) }}
             </td>
             <td>

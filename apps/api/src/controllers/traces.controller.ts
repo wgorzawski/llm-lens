@@ -16,6 +16,19 @@ import {
   type LatencyBucket,
 } from "../db/repository";
 import { replayTrace } from "../services/replay";
+import { findUserById } from "../db/users.repository";
+
+async function fireWebhookIfConfigured(userId: string, trace: unknown) {
+  const user = await findUserById(userId);
+  const prefs = JSON.parse((user?.preferences as string) || "{}") as Record<string, unknown>;
+  const url = prefs.outboundWebhookUrl as string | undefined;
+  if (!url) return;
+  fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ event: "trace.created", trace }),
+  }).catch(() => null);
+}
 
 const TRACE_SORTS: TraceSort[] = ["recent", "latency", "cost", "tokens"];
 const TRACE_STATUSES: TraceStatus[] = ["ok", "warn", "err"];
@@ -78,6 +91,7 @@ export class TracesController {
     const result = parseAnthropicLog(request.body);
     if (!result.success) return reply.status(422).send({ error: result.error });
     const trace = await insertTrace(result.trace, request.user.userId);
+    void fireWebhookIfConfigured(request.user.userId, trace);
     return reply.status(201).send(trace);
   }
 
@@ -89,6 +103,7 @@ export class TracesController {
     const result = parseOpenAILog(request.body);
     if (!result.success) return reply.status(422).send({ error: result.error });
     const trace = await insertTrace(result.trace, request.user.userId);
+    void fireWebhookIfConfigured(request.user.userId, trace);
     return reply.status(201).send(trace);
   }
 
@@ -100,6 +115,7 @@ export class TracesController {
     const result = parseVercelAILog(request.body);
     if (!result.success) return reply.status(422).send({ error: result.error });
     const trace = await insertTrace(result.trace, request.user.userId);
+    void fireWebhookIfConfigured(request.user.userId, trace);
     return reply.status(201).send(trace);
   }
 
