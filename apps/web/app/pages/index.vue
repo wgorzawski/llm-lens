@@ -23,7 +23,7 @@ function rangeToFrom(range: string): string | undefined {
 // ── ui state ─────────────────────────────────────────────────────────────────
 
 const variant = useCookie<"list" | "table" | "cards">("llm-lens:traces-variant", {
-  default: () => "list",
+  default: () => "cards",
   sameSite: "lax",
 });
 const filterProvider = ref<TraceProvider | "all">("all");
