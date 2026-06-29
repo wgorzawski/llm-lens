@@ -9,6 +9,7 @@ import type {
   ToolResult,
 } from "@llm-lens/types";
 import type { ParseResult } from "./types.js";
+import { computeCost } from "./pricing.js";
 
 export function parseAnthropicLog(raw: AnthropicRawLog): ParseResult {
   try {
@@ -41,6 +42,7 @@ export function parseAnthropicLog(raw: AnthropicRawLog): ParseResult {
         model: response.model,
         provider: "anthropic",
         durationMs,
+        costUsd: computeCost(response.model, response.usage.input_tokens, response.usage.output_tokens),
         stopReason,
         temperature: request.temperature,
         maxTokens: request.max_tokens,

@@ -792,8 +792,6 @@ async function seedLast24hTraces(token: string): Promise<number> {
       const prompt = BG_PROMPTS[randInt(0, BG_PROMPTS.length - 1)]!;
       const ts = hoursAgo(h + Math.random());
       const inp = randInt(30, 200), out = randInt(50, 280), dur = randInt(120, 3000);
-      const costPerTok = m.model.includes("opus") ? 0.000015 : m.model.includes("sonnet") ? 0.000003 : 0.0000008;
-      const cost = (inp + out) * costPerTok;
       if (m.provider === "anthropic") {
         await seedAnthropic(token, {
           request: { model: m.model, messages: [{ role: "user", content: prompt }], max_tokens: 512 },
@@ -817,7 +815,6 @@ async function seedLast24hTraces(token: string): Promise<number> {
           timestamp: ts, durationMs: dur,
         });
       }
-      void cost;
       count++;
     }
   }

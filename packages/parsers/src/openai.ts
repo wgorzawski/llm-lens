@@ -8,6 +8,7 @@ import type {
   ToolCall,
 } from "@llm-lens/types";
 import type { ParseResult } from "./types.js";
+import { computeCost } from "./pricing.js";
 
 export function parseOpenAILog(raw: OpenAIRawLog): ParseResult {
   try {
@@ -41,6 +42,7 @@ export function parseOpenAILog(raw: OpenAIRawLog): ParseResult {
         model: response.model,
         provider: "openai",
         durationMs,
+        costUsd: computeCost(response.model, response.usage.prompt_tokens, response.usage.completion_tokens),
         stopReason: normalizeFinishReason(choice.finish_reason),
         temperature: request.temperature,
         maxTokens: request.max_tokens,

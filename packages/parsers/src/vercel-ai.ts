@@ -8,6 +8,7 @@ import type {
   ToolCall,
 } from "@llm-lens/types";
 import type { ParseResult } from "./types.js";
+import { computeCost } from "./pricing.js";
 
 export function parseVercelAILog(raw: VercelAIRawLog): ParseResult {
   try {
@@ -35,6 +36,7 @@ export function parseVercelAILog(raw: VercelAIRawLog): ParseResult {
         model: raw.model ?? "unknown",
         provider: "vercel-ai",
         durationMs,
+        costUsd: computeCost(raw.model ?? "", usage.promptTokens, usage.completionTokens),
         stopReason: normalizeFinishReason(output.finishReason),
         temperature: input.temperature,
         maxTokens: input.maxTokens,
