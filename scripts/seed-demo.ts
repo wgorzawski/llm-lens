@@ -783,6 +783,47 @@ const BG_PROMPTS = [
   "Generate a commit message for these changes.",
 ];
 
+async function seedLast24hTraces(token: string): Promise<number> {
+  let count = 0;
+  for (let h = 23; h >= 0; h--) {
+    const perHour = randInt(1, 5);
+    for (let i = 0; i < perHour; i++) {
+      const m = BG_MODELS[randInt(0, BG_MODELS.length - 1)]!;
+      const prompt = BG_PROMPTS[randInt(0, BG_PROMPTS.length - 1)]!;
+      const ts = hoursAgo(h + Math.random());
+      const inp = randInt(30, 200), out = randInt(50, 280), dur = randInt(120, 3000);
+      const costPerTok = m.model.includes("opus") ? 0.000015 : m.model.includes("sonnet") ? 0.000003 : 0.0000008;
+      const cost = (inp + out) * costPerTok;
+      if (m.provider === "anthropic") {
+        await seedAnthropic(token, {
+          request: { model: m.model, messages: [{ role: "user", content: prompt }], max_tokens: 512 },
+          response: {
+            id: `msg_${uid()}`, type: "message", role: "assistant",
+            content: [{ type: "text", text: "Result for your request." }],
+            model: m.model, stop_reason: "end_turn", stop_sequence: null,
+            usage: { input_tokens: inp, output_tokens: out },
+          },
+          timestamp: ts, durationMs: dur,
+        });
+      } else {
+        await seedOpenAI(token, {
+          request: { model: m.model, messages: [{ role: "user", content: prompt }], max_tokens: 512 },
+          response: {
+            id: `chatcmpl_${uid()}`, object: "chat.completion",
+            created: Math.floor(Date.now() / 1000), model: m.model,
+            choices: [{ index: 0, message: { role: "assistant", content: "Result for your request." }, finish_reason: "stop" }],
+            usage: { prompt_tokens: inp, completion_tokens: out, total_tokens: inp + out },
+          },
+          timestamp: ts, durationMs: dur,
+        });
+      }
+      void cost;
+      count++;
+    }
+  }
+  return count;
+}
+
 async function seedBackgroundTraces(token: string): Promise<number> {
   const items = buildBgTraces();
   let count = 0;
@@ -867,18 +908,23 @@ async function main() {
   const bgCount = await seedBackgroundTraces(token);
   console.log(`  ✓ ${bgCount} background traces created`);
 
-  // 6. Star traces
-  console.log("5. Starring traces");
+  // 6. Seed last-24h hourly traces for hero chart
+  console.log("5. Seeding last-24h hourly traces");
+  const h24Count = await seedLast24hTraces(token);
+  console.log(`  ✓ ${h24Count} last-24h traces created`);
+
+  // 7. Star traces
+  console.log("6. Starring traces");
   for (const id of starred) await starTrace(token, id);
   console.log(`  ✓ ${starred.length} traces starred`);
 
-  // 7. Add notes
-  console.log("6. Adding notes");
+  // 8. Add notes
+  console.log("7. Adding notes");
   for (const [id, body] of noted) await addNote(token, id, body);
   console.log(`  ✓ ${noted.length} notes added`);
 
-  // 8. API keys
-  console.log("7. Creating API keys");
+  // 9. API keys
+  console.log("8. Creating API keys");
   await api("POST", "/keys", { name: "production" }, token);
   await api("POST", "/keys", { name: "staging" }, token);
   console.log("  ✓ 2 API keys created (production, staging)");

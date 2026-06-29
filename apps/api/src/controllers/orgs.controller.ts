@@ -6,7 +6,7 @@ import path from "node:path";
 import { pipeline } from "node:stream/promises";
 import { findUserById, updateUserOrgSlug } from "../db/users.repository";
 import { getOrg, upsertOrg, findOrgBySlugExcluding, updateLogoUrl, deleteOrg, type OrgUpdate } from "../db/orgs.repository";
-import { deleteAllUserTraces, getDashboardStats } from "../db/repository";
+import { deleteAllUserTraces, getDashboardV2 } from "../db/repository";
 
 const UPLOADS_DIR = path.resolve(process.env["UPLOADS_DIR"] ?? "./uploads");
 const LOGOS_DIR = path.join(UPLOADS_DIR, "logos");
@@ -39,10 +39,10 @@ export class OrgsController {
   }
 
   @GET("/me/stats")
-  async getStats(request: FastifyRequest, reply: FastifyReply) {
+  async getStats(request: FastifyRequest<{ Querystring: { range?: string } }>, reply: FastifyReply) {
     const user = await findUserById(request.user.userId);
     if (!user) return reply.status(404).send({ error: "User not found" });
-    return getDashboardStats(user.id);
+    return getDashboardV2(user.id, request.query.range ?? "24h");
   }
 
   @PATCH("/me")

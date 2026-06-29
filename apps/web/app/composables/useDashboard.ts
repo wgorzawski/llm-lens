@@ -6,38 +6,44 @@ export interface DailyUsage {
   costUsd: number;
 }
 
-export interface ModelStats {
-  model: string;
-  provider: string;
-  traceCount: number;
-  inputTokens: number;
-  outputTokens: number;
-  costUsd: number;
-  avgDurationMs: number;
-}
-
-export interface DashboardStats {
-  daily: DailyUsage[];
-  byModel: ModelStats[];
-  totals: {
-    traceCount: number;
-    inputTokens: number;
-    outputTokens: number;
-    costUsd: number;
-    avgDurationMs: number;
+export interface DashboardV2 {
+  series: {
+    labels: string[];
+    cost: number[];
+    reqs: number[];
+    p50: number[];
+    p95: number[];
+    p99: number[];
+    errs: number[];
+    split: Array<{ anthropic: number; openai: number; "vercel-ai": number }>;
   };
+  kpis: {
+    spend: number; spendDelta: number; spendSpark: number[];
+    requests: number; requestsDelta: number; requestsSpark: number[];
+    p50: number; p50Delta: number;
+    p95: number; p95Delta: number; latencySpark: number[];
+    errorRate: number; errorSpark: number[];
+    cacheHit: number; cacheSpark: number[];
+  };
+  providers: Array<{ id: string; label: string; requests: number; cost: number; avgLat: number; errRate: number }>;
+  models: Array<{ model: string; provider: string; requests: number; tokensK: number; p95: number; cost: number }>;
+  daily: DailyUsage[];
+  totals: { traceCount: number; inputTokens: number; outputTokens: number; costUsd: number; avgDurationMs: number };
 }
 
 export function useDashboard() {
   const { apiFetch } = useApiFetch();
-  const stats = ref<DashboardStats | null>(null);
+  const stats = ref<DashboardV2 | null>(null);
+  const range = ref("24h");
   const { pending, error, run } = useRequest();
 
   async function fetchStats() {
     await run(async () => {
-      stats.value = await apiFetch<DashboardStats>("/orgs/me/stats");
+      stats.value = await apiFetch<DashboardV2>(`/orgs/me/stats?range=${range.value}`);
     });
   }
+
+  watch(range, fetchStats);
 
   const daily30 = computed<DailyUsage[]>(() => {
     if (!stats.value) return [];
@@ -53,5 +59,5 @@ export function useDashboard() {
     return days;
   });
 
-  return { stats, pending, error, fetchStats, daily30 };
+  return { stats, range, pending, error, fetchStats, daily30 };
 }

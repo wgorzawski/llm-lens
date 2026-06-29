@@ -301,6 +301,188 @@ export async function getDashboardStats(userId: string): Promise<DashboardStats>
   return { daily, byModel, totals };
 }
 
+// ── Dashboard V2: timeseries + KPIs ──────────────────────────────────────────
+
+function pct(arr: number[], p: number): number {
+  if (arr.length === 0) return 0;
+  const sorted = [...arr].sort((a, b) => a - b);
+  return sorted[Math.ceil((sorted.length * p) / 100) - 1] ?? 0;
+}
+
+export interface DashboardV2 {
+  series: {
+    labels: string[];
+    cost: number[];
+    reqs: number[];
+    p50: number[];
+    p95: number[];
+    p99: number[];
+    errs: number[];
+    split: Array<{ anthropic: number; openai: number; "vercel-ai": number }>;
+  };
+  kpis: {
+    spend: number; spendDelta: number; spendSpark: number[];
+    requests: number; requestsDelta: number; requestsSpark: number[];
+    p50: number; p50Delta: number;
+    p95: number; p95Delta: number; latencySpark: number[];
+    errorRate: number; errorSpark: number[];
+    cacheHit: number; cacheSpark: number[];
+  };
+  providers: Array<{ id: string; label: string; requests: number; cost: number; avgLat: number; errRate: number }>;
+  models: Array<{ model: string; provider: string; requests: number; tokensK: number; p95: number; cost: number }>;
+  daily: DailyUsage[];
+  totals: { traceCount: number; inputTokens: number; outputTokens: number; costUsd: number; avgDurationMs: number };
+}
+
+export async function getDashboardV2(userId: string, range = "24h"): Promise<DashboardV2> {
+  const now = new Date();
+  const cfgMap: Record<string, { hours: number; buckets: number; bucketHours: number }> = {
+    "1h":  { hours: 1,   buckets: 12, bucketHours: 1 / 12 },
+    "24h": { hours: 24,  buckets: 24, bucketHours: 1 },
+    "7d":  { hours: 168, buckets: 7,  bucketHours: 24 },
+    "30d": { hours: 720, buckets: 30, bucketHours: 24 },
+  };
+  const cfg = cfgMap[range] ?? cfgMap["24h"]!;
+  const bucketMs = cfg.bucketHours * 3_600_000;
+  const sinceMs = now.getTime() - cfg.hours * 3_600_000;
+  const prevSinceMs = sinceMs - cfg.hours * 3_600_000;
+
+  const raw = await client.execute({
+    sql: `
+      SELECT timestamp, provider, model, status,
+        COALESCE(json_extract(metadata, '$.durationMs'), 0) AS dur,
+        COALESCE(json_extract(metadata, '$.costUsd'), 0) AS cost,
+        COALESCE(json_extract(usage, '$.inputTokens'), 0) AS inp,
+        COALESCE(json_extract(usage, '$.cacheReadInputTokens'), 0) AS cache
+      FROM traces
+      WHERE user_id = ? AND timestamp >= ?
+      ORDER BY timestamp ASC
+    `,
+    args: [userId, new Date(prevSinceMs).toISOString()],
+  });
+
+  type R = { timestamp: string; provider: string; model: string; status: string; dur: number; cost: number; inp: number; cache: number };
+  const rows: R[] = raw.rows.map((r) => ({
+    timestamp: r["timestamp"] as string,
+    provider: r["provider"] as string,
+    model: r["model"] as string,
+    status: r["status"] as string,
+    dur: Number(r["dur"]),
+    cost: Number(r["cost"]),
+    inp: Number(r["inp"]),
+    cache: Number(r["cache"]),
+  }));
+
+  const curr = rows.filter((r) => new Date(r.timestamp).getTime() >= sinceMs);
+  const prev = rows.filter((r) => new Date(r.timestamp).getTime() < sinceMs);
+
+  // ── buckets ─────────────────────────────────────────────────────────────────
+  const bucketStart = now.getTime() - cfg.buckets * bucketMs;
+
+  const mkLabel = (i: number): string => {
+    const d = new Date(bucketStart + i * bucketMs);
+    if (cfg.bucketHours >= 24) return d.toISOString().slice(5, 10);
+    if (cfg.bucketHours < 1) return d.toISOString().slice(11, 16);
+    return d.toISOString().slice(11, 13) + ":00";
+  };
+
+  type Bucket = { label: string; cost: number; reqs: number; errs: number; durs: number[]; inp: number; cache: number; split: { anthropic: number; openai: number; "vercel-ai": number } };
+  const buckets: Bucket[] = Array.from({ length: cfg.buckets }, (_, i) => ({
+    label: mkLabel(i), cost: 0, reqs: 0, errs: 0, durs: [], inp: 0, cache: 0,
+    split: { anthropic: 0, openai: 0, "vercel-ai": 0 },
+  }));
+
+  for (const r of curr) {
+    const idx = Math.min(cfg.buckets - 1, Math.floor((new Date(r.timestamp).getTime() - bucketStart) / bucketMs));
+    if (idx < 0) continue;
+    const b = buckets[idx]!;
+    b.reqs++; b.cost += r.cost; b.inp += r.inp; b.cache += r.cache;
+    if (r.status === "err") b.errs++;
+    if (r.dur > 0) b.durs.push(r.dur);
+    const k = r.provider as "anthropic" | "openai" | "vercel-ai";
+    if (k in b.split) b.split[k]++;
+  }
+
+  // ── aggregate ───────────────────────────────────────────────────────────────
+  const agg = (rs: R[]) => {
+    const durs = rs.map((r) => r.dur).filter((d) => d > 0);
+    const inp = rs.reduce((s, r) => s + r.inp, 0);
+    const cache = rs.reduce((s, r) => s + r.cache, 0);
+    return {
+      spend: rs.reduce((s, r) => s + r.cost, 0),
+      requests: rs.length,
+      p50: pct(durs, 50), p95: pct(durs, 95),
+      errs: rs.filter((r) => r.status === "err").length,
+      cacheHit: inp > 0 ? (cache / inp) * 100 : 0,
+    };
+  };
+  const d = (c: number, p: number) => (p === 0 ? 0 : ((c - p) / p) * 100);
+  const c = agg(curr), p = agg(prev);
+
+  // ── providers ───────────────────────────────────────────────────────────────
+  const provMap = new Map<string, { req: number; cost: number; errs: number; durs: number[] }>();
+  for (const r of curr) {
+    const v = provMap.get(r.provider) ?? { req: 0, cost: 0, errs: 0, durs: [] };
+    v.req++; v.cost += r.cost;
+    if (r.status === "err") v.errs++;
+    if (r.dur > 0) v.durs.push(r.dur);
+    provMap.set(r.provider, v);
+  }
+  const provLabels: Record<string, string> = { anthropic: "Anthropic", openai: "OpenAI", "vercel-ai": "Vercel AI" };
+  const providers = [...provMap.entries()].map(([id, v]) => ({
+    id, label: provLabels[id] ?? id,
+    requests: v.req, cost: v.cost,
+    avgLat: pct(v.durs, 50),
+    errRate: v.req > 0 ? (v.errs / v.req) * 100 : 0,
+  })).sort((a, b) => b.cost - a.cost);
+
+  // ── models ──────────────────────────────────────────────────────────────────
+  const modelMap = new Map<string, { provider: string; req: number; cost: number; durs: number[]; tok: number }>();
+  for (const r of curr) {
+    const v = modelMap.get(r.model) ?? { provider: r.provider, req: 0, cost: 0, durs: [], tok: 0 };
+    v.req++; v.cost += r.cost; v.tok += r.inp;
+    if (r.dur > 0) v.durs.push(r.dur);
+    modelMap.set(r.model, v);
+  }
+  const models = [...modelMap.entries()].map(([model, v]) => ({
+    model, provider: v.provider, requests: v.req,
+    tokensK: Math.round(v.tok / 100) / 10,
+    p95: pct(v.durs, 95), cost: v.cost,
+  })).sort((a, b) => b.cost - a.cost);
+
+  // ── daily + totals ──────────────────────────────────────────────────────────
+  const daily = await usageByDay(userId);
+  const totals = { ...daily.reduce(
+    (acc, x) => ({ traceCount: acc.traceCount + x.traceCount, inputTokens: acc.inputTokens + x.inputTokens, outputTokens: acc.outputTokens + x.outputTokens, costUsd: acc.costUsd + x.costUsd, avgDurationMs: 0 }),
+    { traceCount: 0, inputTokens: 0, outputTokens: 0, costUsd: 0, avgDurationMs: 0 },
+  ) };
+  const durRow = await client.execute({ sql: `SELECT AVG(json_extract(metadata, '$.durationMs')) AS m FROM traces WHERE user_id = ?`, args: [userId] });
+  totals.avgDurationMs = Math.round(Number(durRow.rows[0]?.["m"] ?? 0));
+
+  return {
+    series: {
+      labels: buckets.map((b) => b.label),
+      cost: buckets.map((b) => b.cost),
+      reqs: buckets.map((b) => b.reqs),
+      p50: buckets.map((b) => pct(b.durs, 50)),
+      p95: buckets.map((b) => pct(b.durs, 95)),
+      p99: buckets.map((b) => pct(b.durs, 99)),
+      errs: buckets.map((b) => b.errs),
+      split: buckets.map((b) => b.split),
+    },
+    kpis: {
+      spend: c.spend, spendDelta: d(c.spend, p.spend), spendSpark: buckets.map((b) => b.cost),
+      requests: c.requests, requestsDelta: d(c.requests, p.requests), requestsSpark: buckets.map((b) => b.reqs),
+      p50: c.p50, p50Delta: d(c.p50, p.p50),
+      p95: c.p95, p95Delta: d(c.p95, p.p95), latencySpark: buckets.map((b) => pct(b.durs, 50)),
+      errorRate: c.requests > 0 ? (c.errs / c.requests) * 100 : 0,
+      errorSpark: buckets.map((b) => b.errs),
+      cacheHit: c.cacheHit, cacheSpark: buckets.map((b) => b.inp > 0 ? (b.cache / b.inp) * 100 : 0),
+    },
+    providers, models, daily, totals,
+  };
+}
+
 export async function listNotes(traceId: string) {
   return db
     .select()

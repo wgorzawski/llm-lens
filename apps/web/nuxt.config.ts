@@ -3,7 +3,7 @@ export default defineNuxtConfig({
   devtools: { enabled: true },
   modules: ["@unocss/nuxt", "@vueuse/nuxt", "@nuxt/eslint", "@nuxt/hints"],
   typescript: { strict: true },
-  css: ["~/assets/css/tokens.css", "~/assets/css/settings.css", "~/assets/css/traces.css"],
+  css: ["~/assets/css/tokens.css", "~/assets/css/settings.css", "~/assets/css/traces.css", "~/assets/css/dashboard.css"],
   app: {
     head: {
       link: [
