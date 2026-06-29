@@ -4,7 +4,7 @@
 
 A tool for ingesting, storing, and visualizing LLM API traces. Supports Anthropic, OpenAI, and Vercel AI SDK logs and normalizes them into a unified format for side-by-side inspection.
 
-**[→ llm-lens landing page](https://wgorzawski.github.io/llm-lens/)**
+**[→ llm-lens landing page](https://wgorzawski.github.io/llm-lens/)** · **[→ Live demo](https://llmlens.tojest.dev/)**
 
 ## Screenshots
 

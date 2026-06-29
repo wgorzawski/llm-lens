@@ -710,13 +710,33 @@ const BG_PROMPTS = [
   "What does this shell one-liner do step by step?",
 ];
 
+const BG_RESPONSES = [
+  "The paragraph describes how microservices architecture decomposes a monolithic application into independently deployable services that communicate over well-defined APIs.",
+  "```typescript\ninterface User {\n  id: number;\n  name: string;\n  email: string;\n  role: 'admin' | 'viewer';\n  createdAt: string;\n}\n\ninterface ApiResponse<T> {\n  data: T;\n  total: number;\n  page: number;\n}\n```",
+  "The issue is a missing closing parenthesis on line 4. Here's the corrected version:\n\n```js\nfunction greet(name) {\n  return `Hello, ${name}!`;\n}\n```",
+  "```typescript\nimport { describe, it, expect } from 'vitest';\nimport { formatCurrency } from './format';\n\ndescribe('formatCurrency', () => {\n  it('formats positive numbers', () => {\n    expect(formatCurrency(1234.5)).toBe('$1,234.50');\n  });\n  it('formats zero', () => {\n    expect(formatCurrency(0)).toBe('$0.00');\n  });\n});\n```",
+  "The pattern `/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$/` validates email addresses: `^` anchors the start, `[a-zA-Z0-9._%+-]+` matches the local part, `@` is literal, `[a-zA-Z0-9.-]+` matches the domain, `\\.` is a literal dot, and `[a-zA-Z]{2,}$` requires a TLD of at least two characters.",
+  "Voici la traduction :\n\n**Anglais :** The deployment pipeline has been updated to include automated security scanning.\n\n**Français :** Le pipeline de déploiement a été mis à jour pour inclure une analyse de sécurité automatisée.",
+  "Without more context, here are the most common options:\n- `index` / `idx` — loop counter\n- `count` — accumulating a total\n- `offset` — a byte or array position\n- `value` / `result` — a computed result\n\nPick the name that describes *what* the variable holds, not its type.",
+  "The algorithm has **O(n²)** time complexity. The outer loop runs n times and for each iteration the inner loop also runs up to n times, giving n × n total operations. Space complexity is O(1) since no additional data structures are allocated.",
+  "```typescript\n// Before\nconst results = [];\nfor (let i = 0; i < items.length; i++) {\n  results.push(items[i].value * 2);\n}\n\n// After\nconst results = items.map(item => item.value * 2);\n```\n\n`Array.map` expresses intent more clearly and avoids the mutable accumulator.",
+  "```\nfeat(auth): add refresh token rotation\n\nReplace single long-lived tokens with a short-lived access token (15 min)\nand a rotating refresh token (7 days). Each refresh invalidates the\nprevious token to prevent replay attacks.\n```",
+  "**SQL** (PostgreSQL, MySQL) gives you ACID transactions, enforced schema, and powerful JOINs — ideal when your data has clear relationships and consistency matters. **NoSQL** (MongoDB, DynamoDB) offers flexible schemas and horizontal write scaling — better for high-throughput or document-shaped data that varies per record. For relational user and order data, SQL is the safer default unless you're projecting write volumes beyond a single primary's capacity.",
+  "The description explains *what* changed but not *why*. Suggested improvements:\n1. **Motivation** — what problem does this fix or feature solve?\n2. **Testing** — manual steps or automated test added?\n3. **Screenshots** if the UI changed.\n\nAlso rename the title from 'Fix stuff' to something specific, e.g. `fix(cart): prevent double-submit on slow connections`.",
+  "```typescript\n/**\n * Formats a number as a localized currency string.\n *\n * @param amount - The numeric value to format.\n * @param currency - ISO 4217 currency code (default: `'USD'`).\n * @param locale - BCP 47 locale tag (default: `'en-US'`).\n * @returns A formatted string, e.g. `'$1,234.56'`.\n */\nfunction formatCurrency(amount: number, currency = 'USD', locale = 'en-US'): string {\n  return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(amount);\n}\n```",
+  "`Record<string, string | undefined>` is structurally correct for an object with optional string values, but TypeScript won't warn when you access a missing key unless you enable `noUncheckedIndexedAccess`. Use `Partial<Record<string, string>>` for explicit intent, or define a concrete interface if the key set is known at compile time.",
+  "```bash\nfind . -name '*.log' | xargs grep -l 'ERROR' | xargs rm\n```\n1. `find . -name '*.log'` — recursively lists all `.log` files under the current directory\n2. `xargs grep -l 'ERROR'` — filters to only filenames that contain the string `ERROR`\n3. `xargs rm` — deletes those files\n\n⚠️ This permanently deletes files. Run with `echo` instead of `rm` first to preview.",
+];
+
 async function seedLast24hTraces(token: string): Promise<number> {
   let count = 0;
   for (let h = 23; h >= 0; h--) {
     const perHour = randInt(1, 5);
     for (let i = 0; i < perHour; i++) {
       const m = BG_MODELS[randInt(0, BG_MODELS.length - 1)]!;
-      const prompt = BG_PROMPTS[randInt(0, BG_PROMPTS.length - 1)]!;
+      const pi = randInt(0, BG_PROMPTS.length - 1);
+      const prompt = BG_PROMPTS[pi]!;
+      const reply = BG_RESPONSES[pi]!;
       const ts = hoursAgo(h + Math.random());
       const [inMin, inMax, outMin, outMax, durMin, durMax] = pickSize();
       const inp = randInt(inMin, inMax), out = randInt(outMin, outMax), dur = randInt(durMin, durMax);
@@ -725,7 +745,7 @@ async function seedLast24hTraces(token: string): Promise<number> {
           request: { model: m.model, messages: [{ role: "user", content: prompt }], max_tokens: 512 },
           response: {
             id: `msg_${uid()}`, type: "message", role: "assistant",
-            content: [{ type: "text", text: "Result for your request." }],
+            content: [{ type: "text", text: reply }],
             model: m.model, stop_reason: "end_turn", stop_sequence: null,
             usage: { input_tokens: inp, output_tokens: out },
           },
@@ -737,7 +757,7 @@ async function seedLast24hTraces(token: string): Promise<number> {
           response: {
             id: `chatcmpl_${uid()}`, object: "chat.completion",
             created: Math.floor(Date.now() / 1000), model: m.model,
-            choices: [{ index: 0, message: { role: "assistant", content: "Result for your request." }, finish_reason: "stop" }],
+            choices: [{ index: 0, message: { role: "assistant", content: reply }, finish_reason: "stop" }],
             usage: { prompt_tokens: inp, completion_tokens: out, total_tokens: inp + out },
           },
           timestamp: ts, durationMs: dur,
@@ -753,14 +773,16 @@ async function seedBackgroundTraces(token: string): Promise<number> {
   const items = buildBgTraces();
   let count = 0;
   for (const t of items) {
-    const prompt = BG_PROMPTS[randInt(0, BG_PROMPTS.length - 1)]!;
+    const pi = randInt(0, BG_PROMPTS.length - 1);
+    const prompt = BG_PROMPTS[pi]!;
+    const reply = BG_RESPONSES[pi]!;
     const ts = daysAgo(t.daysAgoOffset);
     if (t.provider === "anthropic") {
       await seedAnthropic(token, {
         request: { model: t.model, messages: [{ role: "user", content: prompt }], max_tokens: 512 },
         response: {
           id: `msg_${uid()}`, type: "message", role: "assistant",
-          content: [{ type: "text", text: "Here is the result for your request." }],
+          content: [{ type: "text", text: reply }],
           model: t.model, stop_reason: "end_turn", stop_sequence: null,
           usage: { input_tokens: t.inputTokens, output_tokens: t.outputTokens },
         },
@@ -772,7 +794,7 @@ async function seedBackgroundTraces(token: string): Promise<number> {
         response: {
           id: `chatcmpl_${uid()}`, object: "chat.completion",
           created: Math.floor(Date.now() / 1000), model: t.model,
-          choices: [{ index: 0, message: { role: "assistant", content: "Here is the result for your request." }, finish_reason: "stop" }],
+          choices: [{ index: 0, message: { role: "assistant", content: reply }, finish_reason: "stop" }],
           usage: { prompt_tokens: t.inputTokens, completion_tokens: t.outputTokens, total_tokens: t.inputTokens + t.outputTokens },
         },
         timestamp: ts, durationMs: t.durationMs,
