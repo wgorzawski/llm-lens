@@ -1,13 +1,3 @@
-/**
- * Shared fetch wrapper used by all composables.
- * Injects the auth token and base URL so each composable
- * doesn't have to repeat that boilerplate.
- *
- * Usage:
- *   const { apiFetch } = useApiFetch()
- *   const data = await apiFetch<MyType>("/traces")
- *   await apiFetch("/traces/123", { method: "DELETE" })
- */
 export function useApiFetch() {
   const config = useRuntimeConfig();
   const apiBase = config.public.apiBase as string;
@@ -17,14 +7,25 @@ export function useApiFetch() {
     return token.value ? { Authorization: `Bearer ${token.value}` } : {};
   }
 
-  function apiFetch<T>(
+  async function apiFetch<T>(
     path: string,
     options?: Parameters<typeof $fetch>[1],
   ): Promise<T> {
-    return $fetch<T>(`${apiBase}${path}`, {
-      ...options,
-      headers: { ...authHeaders(), ...(options?.headers as Record<string, string> ?? {}) },
-    });
+    try {
+      return await $fetch<T>(`${apiBase}${path}`, {
+        ...options,
+        headers: { ...authHeaders(), ...(options?.headers as Record<string, string> ?? {}) },
+      });
+    } catch (err: unknown) {
+      const status = (err as { status?: number; statusCode?: number })?.status
+        ?? (err as { status?: number; statusCode?: number })?.statusCode;
+      // 401 = token expired/invalid, 404 on /users/me = user wiped from DB
+      if (status === 401 || (status === 404 && path === "/users/me")) {
+        token.value = null;
+        await navigateTo("/login");
+      }
+      throw err;
+    }
   }
 
   return { apiFetch };
