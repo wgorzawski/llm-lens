@@ -203,6 +203,28 @@ export interface DailyUsage {
   costUsd: number;
 }
 
+export interface ModelStats {
+  model: string;
+  provider: string;
+  traceCount: number;
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number;
+  avgDurationMs: number;
+}
+
+export interface DashboardStats {
+  daily: DailyUsage[];
+  byModel: ModelStats[];
+  totals: {
+    traceCount: number;
+    inputTokens: number;
+    outputTokens: number;
+    costUsd: number;
+    avgDurationMs: number;
+  };
+}
+
 export async function usageByDay(userId: string): Promise<DailyUsage[]> {
   const result = await client.execute({
     sql: `
@@ -215,7 +237,7 @@ export async function usageByDay(userId: string): Promise<DailyUsage[]> {
       FROM traces
       WHERE user_id = ?
       GROUP BY day
-      ORDER BY day DESC
+      ORDER BY day ASC
     `,
     args: [userId],
   });
@@ -226,6 +248,57 @@ export async function usageByDay(userId: string): Promise<DailyUsage[]> {
     outputTokens: Number(r["output_tokens"] ?? 0),
     costUsd: Number(r["cost_usd"] ?? 0),
   }));
+}
+
+export async function getDashboardStats(userId: string): Promise<DashboardStats> {
+  const daily = await usageByDay(userId);
+
+  const modelResult = await client.execute({
+    sql: `
+      SELECT
+        model,
+        provider,
+        COUNT(*) AS trace_count,
+        SUM(json_extract(usage, '$.inputTokens')) AS input_tokens,
+        SUM(json_extract(usage, '$.outputTokens')) AS output_tokens,
+        SUM(COALESCE(json_extract(metadata, '$.costUsd'), 0)) AS cost_usd,
+        AVG(json_extract(metadata, '$.durationMs')) AS avg_duration_ms
+      FROM traces
+      WHERE user_id = ?
+      GROUP BY model, provider
+      ORDER BY trace_count DESC
+    `,
+    args: [userId],
+  });
+
+  const byModel: ModelStats[] = modelResult.rows.map((r) => ({
+    model: r["model"] as string,
+    provider: r["provider"] as string,
+    traceCount: Number(r["trace_count"]),
+    inputTokens: Number(r["input_tokens"] ?? 0),
+    outputTokens: Number(r["output_tokens"] ?? 0),
+    costUsd: Number(r["cost_usd"] ?? 0),
+    avgDurationMs: Math.round(Number(r["avg_duration_ms"] ?? 0)),
+  }));
+
+  const totals = daily.reduce(
+    (acc, d) => ({
+      traceCount: acc.traceCount + d.traceCount,
+      inputTokens: acc.inputTokens + d.inputTokens,
+      outputTokens: acc.outputTokens + d.outputTokens,
+      costUsd: acc.costUsd + d.costUsd,
+      avgDurationMs: 0,
+    }),
+    { traceCount: 0, inputTokens: 0, outputTokens: 0, costUsd: 0, avgDurationMs: 0 }
+  );
+
+  const durationRow = await client.execute({
+    sql: `SELECT AVG(json_extract(metadata, '$.durationMs')) AS avg_ms FROM traces WHERE user_id = ?`,
+    args: [userId],
+  });
+  totals.avgDurationMs = Math.round(Number(durationRow.rows[0]?.["avg_ms"] ?? 0));
+
+  return { daily, byModel, totals };
 }
 
 export async function listNotes(traceId: string) {

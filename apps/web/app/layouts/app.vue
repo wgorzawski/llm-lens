@@ -19,6 +19,7 @@ const activeItem = computed(() => {
   if (route.path === "/keys") return "keys";
   if (route.path === "/settings") return "settings";
   if (route.path === "/traces/diff") return "compare";
+  if (route.path === "/dashboards") return "dashboards";
   return "traces";
 });
 
@@ -27,8 +28,9 @@ function fmtN(n: number) {
 }
 
 const sidebarItems1 = [
-  { id: "traces",  label: "Traces",         icon: "activity", to: "/" },
-  { id: "compare", label: "Compare & diff", icon: "diff",     to: "/traces/diff" },
+  { id: "traces",     label: "Traces",         icon: "activity",  to: "/" },
+  { id: "dashboards", label: "Dashboards",     icon: "dashboard", to: "/dashboards" },
+  { id: "compare",    label: "Compare & diff", icon: "diff",      to: "/traces/diff" },
 ] as const;
 
 const sidebarItems2 = [

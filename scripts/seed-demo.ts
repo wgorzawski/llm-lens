@@ -712,6 +712,129 @@ async function seedAllTraces(token: string): Promise<{ starred: string[]; noted:
   return { starred, noted };
 }
 
+// ── background volume traces for dashboard charts ─────────────────────────────
+
+interface BackgroundTrace {
+  provider: "anthropic" | "openai";
+  model: string;
+  daysAgoOffset: number;
+  inputTokens: number;
+  outputTokens: number;
+  durationMs: number;
+}
+
+const BG_MODELS = [
+  { provider: "anthropic" as const, model: "claude-haiku-4-5" },
+  { provider: "anthropic" as const, model: "claude-haiku-4-5" },
+  { provider: "anthropic" as const, model: "claude-sonnet-4-6" },
+  { provider: "anthropic" as const, model: "claude-opus-4-8" },
+  { provider: "openai" as const, model: "gpt-4o-mini" },
+  { provider: "openai" as const, model: "gpt-4o-mini" },
+  { provider: "openai" as const, model: "gpt-4o-2024-08-06" },
+];
+
+function randInt(min: number, max: number) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function buildBgTraces(): BackgroundTrace[] {
+  const traces: BackgroundTrace[] = [];
+  // Days 14-29: moderate usage (older history)
+  for (let d = 29; d >= 14; d--) {
+    const count = randInt(1, 4);
+    for (let i = 0; i < count; i++) {
+      const m = BG_MODELS[randInt(0, BG_MODELS.length - 1)]!;
+      traces.push({
+        ...m,
+        daysAgoOffset: d,
+        inputTokens: randInt(20, 180),
+        outputTokens: randInt(40, 250),
+        durationMs: randInt(150, 2800),
+      });
+    }
+  }
+  // Days 1-13: heavier usage (recent)
+  for (let d = 13; d >= 1; d--) {
+    const count = randInt(3, 8);
+    for (let i = 0; i < count; i++) {
+      const m = BG_MODELS[randInt(0, BG_MODELS.length - 1)]!;
+      traces.push({
+        ...m,
+        daysAgoOffset: d,
+        inputTokens: randInt(30, 220),
+        outputTokens: randInt(60, 320),
+        durationMs: randInt(150, 3200),
+      });
+    }
+  }
+  return traces;
+}
+
+const BG_PROMPTS = [
+  "Summarize this paragraph in one sentence.",
+  "Convert this JSON to TypeScript interfaces.",
+  "Fix the syntax error in this function.",
+  "Write a unit test for this module.",
+  "Explain what this regex does.",
+  "Translate this message to French.",
+  "Suggest a better variable name for 'x'.",
+  "What's the time complexity of this algorithm?",
+  "Rewrite this loop using Array.map.",
+  "Generate a commit message for these changes.",
+];
+
+async function seedBackgroundTraces(token: string): Promise<number> {
+  const items = buildBgTraces();
+  let count = 0;
+  for (const t of items) {
+    const prompt = BG_PROMPTS[randInt(0, BG_PROMPTS.length - 1)]!;
+    const ts = daysAgo(t.daysAgoOffset);
+    if (t.provider === "anthropic") {
+      await seedAnthropic(token, {
+        request: {
+          model: t.model,
+          messages: [{ role: "user", content: prompt }],
+          max_tokens: 512,
+        },
+        response: {
+          id: `msg_${uid()}`,
+          type: "message", role: "assistant",
+          content: [{ type: "text", text: "Here is the result for your request." }],
+          model: t.model,
+          stop_reason: "end_turn", stop_sequence: null,
+          usage: { input_tokens: t.inputTokens, output_tokens: t.outputTokens },
+        },
+        timestamp: ts,
+        durationMs: t.durationMs,
+      });
+    } else {
+      await seedOpenAI(token, {
+        request: {
+          model: t.model,
+          messages: [{ role: "user", content: prompt }],
+          max_tokens: 512,
+        },
+        response: {
+          id: `chatcmpl_${uid()}`,
+          object: "chat.completion",
+          created: Math.floor(Date.now() / 1000),
+          model: t.model,
+          choices: [{
+            index: 0,
+            message: { role: "assistant", content: "Here is the result for your request." },
+            finish_reason: "stop",
+          }],
+          usage: { prompt_tokens: t.inputTokens, completion_tokens: t.outputTokens, total_tokens: t.inputTokens + t.outputTokens },
+        },
+        timestamp: ts,
+        durationMs: t.durationMs,
+      });
+    }
+    count++;
+  }
+  return count;
+}
+
 // ── main ──────────────────────────────────────────────────────────────────────
 
 async function main() {
@@ -734,23 +857,28 @@ async function main() {
   await api("PATCH", "/orgs/me", { name: "LLM Lens Demo", retentionDays: 30 }, token);
   console.log("  ✓ Org name set, retention → 30 days");
 
-  // 4. Seed traces
-  console.log("3. Seeding traces");
+  // 4. Seed feature traces
+  console.log("3. Seeding showcase traces");
   const { starred, noted } = await seedAllTraces(token);
-  console.log(`  ✓ 25 traces created`);
+  console.log(`  ✓ 25 showcase traces created`);
 
-  // 5. Star traces
-  console.log("4. Starring traces");
+  // 5. Seed background volume for dashboard charts
+  console.log("4. Seeding background traces (30-day history)");
+  const bgCount = await seedBackgroundTraces(token);
+  console.log(`  ✓ ${bgCount} background traces created`);
+
+  // 6. Star traces
+  console.log("5. Starring traces");
   for (const id of starred) await starTrace(token, id);
   console.log(`  ✓ ${starred.length} traces starred`);
 
-  // 6. Add notes
-  console.log("5. Adding notes");
+  // 7. Add notes
+  console.log("6. Adding notes");
   for (const [id, body] of noted) await addNote(token, id, body);
   console.log(`  ✓ ${noted.length} notes added`);
 
-  // 7. API keys
-  console.log("6. Creating API keys");
+  // 8. API keys
+  console.log("7. Creating API keys");
   await api("POST", "/keys", { name: "production" }, token);
   await api("POST", "/keys", { name: "staging" }, token);
   console.log("  ✓ 2 API keys created (production, staging)");
