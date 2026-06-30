@@ -1,6 +1,6 @@
 import { createClient } from "@libsql/client";
 import { drizzle } from "drizzle-orm/libsql";
-import { traces, users, apiKeys, traceNotes, sessions, orgs, orgMembers } from "./schema";
+import { traces, users, apiKeys, traceNotes, sessions, orgs, orgMembers, pageviews, analyticsPings } from "./schema";
 
 const dbUrl = process.env["DATABASE_URL"] ?? "file:./llm-lens.db";
 
@@ -178,6 +178,30 @@ export async function initDb(): Promise<void> {
       snippet
     )
   `);
+
+  await client.execute(`
+    CREATE TABLE IF NOT EXISTS pageviews (
+      id          TEXT    NOT NULL PRIMARY KEY,
+      path        TEXT    NOT NULL,
+      visitor_id  TEXT    NOT NULL,
+      session_id  TEXT    NOT NULL,
+      created_at  INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000)
+    )
+  `);
+  await client.execute(
+    `CREATE INDEX IF NOT EXISTS idx_pageviews_created_at ON pageviews (created_at)`
+  );
+
+  await client.execute(`
+    CREATE TABLE IF NOT EXISTS analytics_pings (
+      session_id    TEXT    NOT NULL PRIMARY KEY,
+      path          TEXT    NOT NULL,
+      last_seen_at  INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000)
+    )
+  `);
+  await client.execute(
+    `CREATE INDEX IF NOT EXISTS idx_analytics_pings_last_seen_at ON analytics_pings (last_seen_at)`
+  );
 }
 
-export { traces, users, apiKeys, traceNotes, sessions, orgs, orgMembers, client };
+export { traces, users, apiKeys, traceNotes, sessions, orgs, orgMembers, pageviews, analyticsPings, client };

@@ -92,6 +92,20 @@ export const orgMembers = sqliteTable("org_members", {
   joinedAt: integer("joined_at"),
 });
 
+export const pageviews = sqliteTable("pageviews", {
+  id: text("id").primaryKey(),
+  path: text("path").notNull(),
+  visitorId: text("visitor_id").notNull(),
+  sessionId: text("session_id").notNull(),
+  createdAt: integer("created_at").notNull().default(sql`(unixepoch('now') * 1000)`),
+});
+
+export const analyticsPings = sqliteTable("analytics_pings", {
+  sessionId: text("session_id").primaryKey(),
+  path: text("path").notNull(),
+  lastSeenAt: integer("last_seen_at").notNull().default(sql`(unixepoch('now') * 1000)`),
+});
+
 export type TraceRow = typeof traces.$inferSelect;
 export type NewTraceRow = typeof traces.$inferInsert;
 export type UserRow = typeof users.$inferSelect;
@@ -100,3 +114,5 @@ export type TraceNoteRow = typeof traceNotes.$inferSelect;
 export type SessionRow = typeof sessions.$inferSelect;
 export type OrgRow = typeof orgs.$inferSelect;
 export type OrgMemberRow = typeof orgMembers.$inferSelect;
+export type PageviewRow = typeof pageviews.$inferSelect;
+export type AnalyticsPingRow = typeof analyticsPings.$inferSelect;

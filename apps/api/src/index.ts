@@ -17,6 +17,7 @@ import { UsersController } from "./controllers/users.controller";
 import { SessionsController } from "./controllers/sessions.controller";
 import { OrgsController } from "./controllers/orgs.controller";
 import { ExportController } from "./controllers/export.controller";
+import { AnalyticsController } from "./controllers/analytics.controller";
 import { findUserById } from "./db/users.repository";
 import { hashKey, findApiKeyByHash, touchApiKey } from "./db/api-keys.repository";
 import { enforceRetention } from "./services/retention";
@@ -84,6 +85,7 @@ await server.register(oauth2Plugin, {
 server.addHook("preHandler", async (request, reply) => {
   if (request.url.startsWith("/api/auth") || request.url === "/health") return;
   if (request.method === "GET" && /^\/api\/orgs\/invites\/[^/]+$/.test(request.url)) return;
+  if (request.method === "POST" && request.url === "/api/analytics/ping") return;
 
   const authHeader = request.headers.authorization;
   if (authHeader?.startsWith("Bearer llmlens_sk_")) {
@@ -110,6 +112,7 @@ await server.register(bootstrap, {
     SessionsController,
     OrgsController,
     ExportController,
+    AnalyticsController,
   ],
 });
 

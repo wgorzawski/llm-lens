@@ -4,8 +4,10 @@ definePageMeta({ layout: "app" });
 
 const { stats, range, pending, fetchStats } = useDashboard();
 const { apiFetch } = useApiFetch();
+const { stats: usageStats, days, fetchStats: fetchUsageStats } = useAnalytics();
 
 onMounted(fetchStats);
+onMounted(fetchUsageStats);
 
 // ── formatting ────────────────────────────────────────────────────────────────
 function fmtUsd(v: number) { return v < 0.01 ? "<$0.01" : `$${v.toFixed(2)}`; }
@@ -128,6 +130,26 @@ function errorBarsPath() {
   }));
 }
 
+// ── app usage (page views) ──────────────────────────────────────────────────────
+function viewBarsPath() {
+  if (!usageStats.value?.series.length) return [];
+  const vals = usageStats.value.series.map((d) => d.views);
+  const n = vals.length, slot = W / n, bw = slot * 0.5;
+  const max = Math.max(...vals, 1);
+  return vals.map((v, i) => ({
+    x: i * slot + (slot - bw) / 2,
+    y: H - (v / max) * (H - PAD),
+    h: Math.max(v > 0 ? 2 : 0, (v / max) * (H - PAD)),
+    w: bw,
+    dim: v === 0,
+  }));
+}
+
+function fmtDay(d: string): string {
+  const date = new Date(`${d}T00:00:00`);
+  return Number.isNaN(date.getTime()) ? d : date.toLocaleDateString([], { month: "short", day: "numeric" });
+}
+
 // ── donut ─────────────────────────────────────────────────────────────────────
 const donutSegments = computed(() => {
   if (!stats.value?.providers.length) return [];
@@ -226,7 +248,7 @@ function sparkPath(vals: number[], w = 62, h = 18): string {
       </button>
 
       <div style="flex:1" />
-      <span class="live-pill"><span class="dot-run" /> live</span>
+      <span class="live-pill"><span class="dot-run" /> {{ usageStats?.live ?? 0 }} live</span>
       <button class="chip" @click="fetchStats"><AppIcon name="refresh" :size="11" /> Refresh</button>
       <button class="chip"><AppIcon name="export" :size="11" /> Export</button>
     </div>
@@ -518,6 +540,35 @@ v-for="seg in donutSegments" :key="seg.id"
               <div v-if="!topTraces.length && !topPending" style="font-size:.75rem;color:var(--text-3);padding:16px 0;text-align:center">No traces found</div>
             </div>
           </div>
+        </div>
+
+        <!-- ── app usage ────────────────────────────────────────────────── -->
+        <div class="dchart-card">
+          <div class="dchart-head">
+            <div class="dchart-titles">
+              <div class="dchart-title">App usage</div>
+              <div v-if="usageStats" class="dchart-sub">{{ fmtNum(usageStats.totalViews) }} views · {{ fmtNum(usageStats.uniqueVisitors) }} visitors · last {{ days }} days</div>
+            </div>
+            <span class="live-pill"><span class="dot-run" /> {{ usageStats?.live ?? 0 }} live now</span>
+          </div>
+          <div v-if="usageStats?.series.length" class="dplot">
+            <div class="dplot-y">
+              <span v-for="t in [Math.max(...usageStats.series.map(d => d.views), 1), Math.round(Math.max(...usageStats.series.map(d => d.views), 1) / 2), 0]" :key="t">{{ t }}</span>
+            </div>
+            <div class="dplot-area">
+              <svg class="dplot-svg" viewBox="0 0 720 168" preserveAspectRatio="none" width="100%" height="168" aria-hidden>
+                <line v-for="i in [0,1,2,3]" :key="i" class="dgrid" x1="0" x2="720" :y1="i * (168/3)" :y2="i * (168/3)" vector-effect="non-scaling-stroke" />
+                <rect
+                  v-for="(b, idx) in viewBarsPath()" :key="idx"
+                  :x="b.x" :y="b.y" :width="b.w" :height="Math.max(0, b.h)"
+                  rx="1" fill="var(--accent)" :opacity="b.dim ? 0.18 : 0.9" />
+              </svg>
+              <div class="dplot-x">
+                <span v-for="d in [usageStats.series[0], usageStats.series[Math.floor(usageStats.series.length / 2)], usageStats.series[usageStats.series.length - 1]]" :key="d?.day">{{ d ? fmtDay(d.day) : '' }}</span>
+              </div>
+            </div>
+          </div>
+          <div v-else style="font-size:.75rem;color:var(--text-3);padding:16px 0;text-align:center">No visits recorded yet</div>
         </div>
 
         <!-- ── incident feed ───────────────────────────────────────────── -->
