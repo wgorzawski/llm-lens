@@ -14,6 +14,12 @@ A tool for ingesting, storing, and visualizing LLM API traces. Supports Anthropi
 ### Trace detail
 ![Trace detail](docs/screens/trace-detail.png)
 
+### Dashboard
+![Dashboard](docs/screens/dashboard.png)
+
+### Compare & diff
+![Compare & diff](docs/screens/compare-diff.png)
+
 ## Features
 
 - **Unified trace format** — Anthropic, OpenAI, and Vercel AI logs normalized to a single `UnifiedTrace` schema
