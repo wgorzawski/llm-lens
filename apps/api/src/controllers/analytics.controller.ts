@@ -28,8 +28,7 @@ export class AnalyticsController {
   }
 
   @GET("/stats")
-  async stats(request: FastifyRequest<{ Querystring: { days?: string } }>) {
-    const days = Math.min(Math.max(parseInt(request.query.days ?? "14", 10) || 14, 1), 90);
-    return getStats(days);
+  async stats(request: FastifyRequest<{ Querystring: { range?: string } }>) {
+    return getStats(request.query.range ?? "24h");
   }
 }

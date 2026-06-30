@@ -2,16 +2,18 @@ import { client } from "./index";
 
 const LIVE_WINDOW_MS = 60_000;
 
-export interface DailyViews {
-  day: string;
-  views: number;
-}
+const RANGE_CFG: Record<string, { hours: number; buckets: number; bucketHours: number }> = {
+  "1h":  { hours: 1,   buckets: 12, bucketHours: 1 / 12 },
+  "24h": { hours: 24,  buckets: 24, bucketHours: 1 },
+  "7d":  { hours: 168, buckets: 7,  bucketHours: 24 },
+  "30d": { hours: 720, buckets: 30, bucketHours: 24 },
+};
 
 export interface AnalyticsStats {
   totalViews: number;
   uniqueVisitors: number;
   live: number;
-  series: DailyViews[];
+  series: { labels: string[]; views: number[] };
 }
 
 export async function recordPageview(path: string, visitorId: string, sessionId: string): Promise<void> {
@@ -39,8 +41,11 @@ export async function getLiveCount(): Promise<number> {
   return Number(result.rows[0]?.["live"] ?? 0);
 }
 
-export async function getStats(days: number): Promise<AnalyticsStats> {
-  const since = Date.now() - days * 24 * 60 * 60 * 1000;
+export async function getStats(range: string): Promise<AnalyticsStats> {
+  const cfg = RANGE_CFG[range] ?? RANGE_CFG["24h"]!;
+  const bucketMs = cfg.bucketHours * 3_600_000;
+  const now = Date.now();
+  const since = now - cfg.hours * 3_600_000;
 
   const totalsResult = await client.execute({
     sql: `
@@ -51,16 +56,26 @@ export async function getStats(days: number): Promise<AnalyticsStats> {
     args: [since],
   });
 
-  const seriesResult = await client.execute({
-    sql: `
-      SELECT strftime('%Y-%m-%d', created_at / 1000, 'unixepoch') AS day, COUNT(*) AS views
-      FROM pageviews
-      WHERE created_at > ?
-      GROUP BY day
-      ORDER BY day ASC
-    `,
+  const rowsResult = await client.execute({
+    sql: `SELECT created_at FROM pageviews WHERE created_at > ? ORDER BY created_at ASC`,
     args: [since],
   });
+
+  const bucketStart = now - cfg.buckets * bucketMs;
+  const mkLabel = (i: number): string => {
+    const d = new Date(bucketStart + i * bucketMs);
+    if (cfg.bucketHours >= 24) return d.toISOString().slice(5, 10);
+    if (cfg.bucketHours < 1) return d.toISOString().slice(11, 16);
+    return `${d.toISOString().slice(11, 13)}:00`;
+  };
+
+  const labels = Array.from({ length: cfg.buckets }, (_, i) => mkLabel(i));
+  const views = new Array(cfg.buckets).fill(0) as number[];
+  for (const r of rowsResult.rows) {
+    const idx = Math.min(cfg.buckets - 1, Math.floor((Number(r["created_at"]) - bucketStart) / bucketMs));
+    if (idx < 0) continue;
+    views[idx]!++;
+  }
 
   const live = await getLiveCount();
 
@@ -68,6 +83,6 @@ export async function getStats(days: number): Promise<AnalyticsStats> {
     totalViews: Number(totalsResult.rows[0]?.["total_views"] ?? 0),
     uniqueVisitors: Number(totalsResult.rows[0]?.["unique_visitors"] ?? 0),
     live,
-    series: seriesResult.rows.map((r) => ({ day: r["day"] as string, views: Number(r["views"]) })),
+    series: { labels, views },
   };
 }

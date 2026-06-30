@@ -1,28 +1,22 @@
-export interface DailyViews {
-  day: string;
-  views: number;
-}
-
 export interface AnalyticsStats {
   totalViews: number;
   uniqueVisitors: number;
   live: number;
-  series: DailyViews[];
+  series: { labels: string[]; views: number[] };
 }
 
-export function useAnalytics() {
+export function useAnalytics(range: Ref<string>) {
   const { apiFetch } = useApiFetch();
   const stats = ref<AnalyticsStats | null>(null);
-  const days = ref(14);
   const { pending, error, run } = useRequest();
 
   async function fetchStats() {
     await run(async () => {
-      stats.value = await apiFetch<AnalyticsStats>(`/analytics/stats?days=${days.value}`);
+      stats.value = await apiFetch<AnalyticsStats>(`/analytics/stats?range=${range.value}`);
     });
   }
 
-  watch(days, fetchStats);
+  watch(range, fetchStats);
 
-  return { stats, days, pending, error, fetchStats };
+  return { stats, pending, error, fetchStats };
 }

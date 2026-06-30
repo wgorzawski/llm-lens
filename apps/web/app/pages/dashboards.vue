@@ -4,7 +4,7 @@ definePageMeta({ layout: "app" });
 
 const { stats, range, pending, fetchStats } = useDashboard();
 const { apiFetch } = useApiFetch();
-const { stats: usageStats, days, fetchStats: fetchUsageStats } = useAnalytics();
+const { stats: usageStats, fetchStats: fetchUsageStats } = useAnalytics(range);
 
 onMounted(fetchStats);
 onMounted(fetchUsageStats);
@@ -131,24 +131,19 @@ function errorBarsPath() {
 }
 
 // ── app usage (page views) ──────────────────────────────────────────────────────
-function viewBarsPath() {
-  if (!usageStats.value?.series.length) return [];
-  const vals = usageStats.value.series.map((d) => d.views);
-  const n = vals.length, slot = W / n, bw = slot * 0.5;
-  const max = Math.max(...vals, 1);
-  return vals.map((v, i) => ({
-    x: i * slot + (slot - bw) / 2,
-    y: H - (v / max) * (H - PAD),
-    h: Math.max(v > 0 ? 2 : 0, (v / max) * (H - PAD)),
-    w: bw,
-    dim: v === 0,
-  }));
-}
+const usageYTicks = computed(() => {
+  if (!usageStats.value) return ["", "", ""];
+  const mx = Math.max(...usageStats.value.series.views, 1);
+  return [String(mx), String(Math.round(mx / 2)), "0"];
+});
 
-function fmtDay(d: string): string {
-  const date = new Date(`${d}T00:00:00`);
-  return Number.isNaN(date.getTime()) ? d : date.toLocaleDateString([], { month: "short", day: "numeric" });
-}
+const usageXTicks = computed(() => {
+  if (!usageStats.value) return [];
+  const labels = usageStats.value.series.labels;
+  const n = labels.length;
+  if (n === 0) return [];
+  return [labels[0], labels[Math.floor(n / 3)], labels[Math.floor(2 * n / 3)], labels[n - 1]].filter(Boolean) as string[];
+});
 
 // ── donut ─────────────────────────────────────────────────────────────────────
 const donutSegments = computed(() => {
@@ -547,24 +542,30 @@ v-for="seg in donutSegments" :key="seg.id"
           <div class="dchart-head">
             <div class="dchart-titles">
               <div class="dchart-title">App usage</div>
-              <div v-if="usageStats" class="dchart-sub">{{ fmtNum(usageStats.totalViews) }} views · {{ fmtNum(usageStats.uniqueVisitors) }} visitors · last {{ days }} days</div>
+              <div v-if="usageStats" class="dchart-sub">{{ fmtNum(usageStats.totalViews) }} views · {{ fmtNum(usageStats.uniqueVisitors) }} visitors · {{ rangeLabel }}</div>
             </div>
             <span class="live-pill"><span class="dot-run" /> {{ usageStats?.live ?? 0 }} live now</span>
           </div>
-          <div v-if="usageStats?.series.length" class="dplot">
+          <div v-if="usageStats?.series.views.length" class="dplot">
             <div class="dplot-y">
-              <span v-for="t in [Math.max(...usageStats.series.map(d => d.views), 1), Math.round(Math.max(...usageStats.series.map(d => d.views), 1) / 2), 0]" :key="t">{{ t }}</span>
+              <span v-for="t in usageYTicks" :key="t">{{ t }}</span>
             </div>
             <div class="dplot-area">
               <svg class="dplot-svg" viewBox="0 0 720 168" preserveAspectRatio="none" width="100%" height="168" aria-hidden>
                 <line v-for="i in [0,1,2,3]" :key="i" class="dgrid" x1="0" x2="720" :y1="i * (168/3)" :y2="i * (168/3)" vector-effect="non-scaling-stroke" />
-                <rect
-                  v-for="(b, idx) in viewBarsPath()" :key="idx"
-                  :x="b.x" :y="b.y" :width="b.w" :height="Math.max(0, b.h)"
-                  rx="1" fill="var(--accent)" :opacity="b.dim ? 0.18 : 0.9" />
+                <defs>
+                  <linearGradient id="g-usage" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stop-color="var(--accent)" stop-opacity="0.28" />
+                    <stop offset="100%" stop-color="var(--accent)" stop-opacity="0.01" />
+                  </linearGradient>
+                </defs>
+                <path :d="buildLine(usageStats.series.views) + ` L720 ${H} L0 ${H} Z`" fill="url(#g-usage)" />
+                <path
+                  :d="buildLine(usageStats.series.views)" fill="none" stroke="var(--accent)" stroke-width="1.6"
+                  vector-effect="non-scaling-stroke" stroke-linejoin="round" />
               </svg>
               <div class="dplot-x">
-                <span v-for="d in [usageStats.series[0], usageStats.series[Math.floor(usageStats.series.length / 2)], usageStats.series[usageStats.series.length - 1]]" :key="d?.day">{{ d ? fmtDay(d.day) : '' }}</span>
+                <span v-for="t in usageXTicks" :key="t">{{ t }}</span>
               </div>
             </div>
           </div>
