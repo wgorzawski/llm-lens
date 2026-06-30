@@ -25,6 +25,7 @@ A tool for ingesting, storing, and visualizing LLM API traces. Supports Anthropi
 - **Raw JSON access** — full original log available at the bottom of every detail page
 - **REST API** — ingest traces programmatically from any language or SDK
 - **Auto-instrumentation** — `@llm-lens/instrument` patches your OpenAI or Anthropic client in-place; every call is captured with zero changes to your application logic
+- **App usage analytics** — built-in pageview and live-session tracking on the dashboard, no third-party analytics service required
 
 ## Tech stack
 
