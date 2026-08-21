@@ -25,7 +25,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version-file: ".nvmrc"
           cache: pnpm
 
       - name: Install dependencies
@@ -37,6 +37,10 @@ jobs:
           pnpm --filter @llm-lens/types build
           pnpm --filter @llm-lens/parsers build
           pnpm --filter @llm-lens/instrument build
+
+      # ── build API ──────────────────────────────────────────────────────
+      - name: Build API
+        run: pnpm --filter @llm-lens/api build
 
       # ── build Nuxt on CI (memory-heavy — server has only 1 GB) ───────────
       - name: Build web
@@ -59,7 +63,12 @@ jobs:
           echo "SSH_CMD=ssh -i ~/.ssh/demo_key -p ${{ secrets.DEMO_SSH_PORT }} ${{ secrets.DEMO_SSH_USER }}@${{ secrets.DEMO_SSH_HOST }}" >> $GITHUB_ENV
           echo "RSYNC_SSH=ssh -i ~/.ssh/demo_key -p ${{ secrets.DEMO_SSH_PORT }}" >> $GITHUB_ENV
 
-      # ── create .env files on server from secrets ─────────────────────
+      # ── create .env files from secrets, at fixed paths OUTSIDE apps/packages ──
+      # deploy.sh wipes and re-extracts apps/ + packages/ on every deploy (tar+scp
+      # pattern shared with xposter/fudini), so a .env dropped directly at
+      # apps/api/.env or apps/web/.env wouldn't survive the next deploy. These fixed
+      # paths live at the deploy dir root instead; deploy.sh copies them into place
+      # itself, after extraction.
       - name: Create .env files on server
         run: |
           cat > /tmp/api.env << EOF
@@ -73,61 +82,55 @@ jobs:
           printf 'PORT=3031\n' > /tmp/web.env
 
           rsync -az -e "$RSYNC_SSH" /tmp/api.env \
-            ${{ secrets.DEMO_SSH_USER }}@${{ secrets.DEMO_SSH_HOST }}:/home/llm-lens/apps/api/.env
+            ${{ secrets.DEMO_SSH_USER }}@${{ secrets.DEMO_SSH_HOST }}:/home/llm-lens/.env.llm-lens-api
 
           rsync -az -e "$RSYNC_SSH" /tmp/web.env \
-            ${{ secrets.DEMO_SSH_USER }}@${{ secrets.DEMO_SSH_HOST }}:/home/llm-lens/apps/web/.env
+            ${{ secrets.DEMO_SSH_USER }}@${{ secrets.DEMO_SSH_HOST }}:/home/llm-lens/.env.llm-lens-web
 
-      # ── upload Nuxt output ─────────────────────────────────────────────
-      - name: Upload web build
+      # ── archive build ────────────────────────────────────────────────────
+      - name: Archive build
         run: |
-          rsync -az --delete --mkpath \
-            -e "$RSYNC_SSH" \
-            apps/web/.output/ \
-            ${{ secrets.DEMO_SSH_USER }}@${{ secrets.DEMO_SSH_HOST }}:/home/llm-lens/apps/web/.output/
-
-      # ── upload seed script + PM2 config ────────────────────────────────
-      - name: Upload scripts & ecosystem config
-        run: |
-          rsync -az \
-            -e "$RSYNC_SSH" \
-            scripts/ \
-            ${{ secrets.DEMO_SSH_USER }}@${{ secrets.DEMO_SSH_HOST }}:/home/llm-lens/scripts/
-
-          rsync -az \
-            -e "$RSYNC_SSH" \
+          tar czf repo.tar.gz \
+            apps \
+            packages \
+            scripts \
+            deploy.sh \
             ecosystem.config.cjs \
-            ${{ secrets.DEMO_SSH_USER }}@${{ secrets.DEMO_SSH_HOST }}:/home/llm-lens/ecosystem.config.cjs
+            package.json \
+            pnpm-lock.yaml \
+            pnpm-workspace.yaml \
+            .nvmrc
 
-      # ── update server: pull code, install, build API, reload PM2 ─────────
-      - name: Update & restart server
-        run: |
-          $SSH_CMD bash -s << 'ENDSSH'
-            set -e
-            export NVM_DIR="$HOME/.nvm"
-            [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
-            cd /home/llm-lens
+      - name: Upload archive
+        uses: appleboy/scp-action@v1
+        with:
+          host: ${{ secrets.DEMO_SSH_HOST }}
+          port: ${{ secrets.DEMO_SSH_PORT }}
+          username: ${{ secrets.DEMO_SSH_USER }}
+          key: ${{ secrets.DEMO_SSH_KEY }}
+          source: "repo.tar.gz"
+          target: "/home/llm-lens"
 
-            echo "→ pulling latest code"
-            git fetch origin master
-            git reset --hard origin/master
+      # ── extract & run deploy.sh ────────────────────────────────────────
+      - name: SSH deploy
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEMO_SSH_HOST }}
+          port: ${{ secrets.DEMO_SSH_PORT }}
+          username: ${{ secrets.DEMO_SSH_USER }}
+          key: ${{ secrets.DEMO_SSH_KEY }}
+          script: |
+            DEPLOY_DIR=/home/llm-lens
 
-            echo "→ installing dependencies"
-            pnpm install --frozen-lockfile
+            # Wyczyść stare apps/packages przed rozpakowaniem (tar nie usuwa
+            # plików, których nie ma w nowym archiwum).
+            rm -rf $DEPLOY_DIR/apps $DEPLOY_DIR/packages
 
-            echo "→ building shared packages"
-            pnpm --filter @llm-lens/types build
-            pnpm --filter @llm-lens/parsers build
-            pnpm --filter @llm-lens/instrument build
-
-            echo "→ building API"
-            pnpm --filter @llm-lens/api build
-
-            echo "→ reloading PM2"
-            pm2 reload ecosystem.config.cjs --update-env || pm2 start ecosystem.config.cjs
-
-            pm2 save
-          ENDSSH
+            tar xzf $DEPLOY_DIR/repo.tar.gz -C $DEPLOY_DIR
+            rm $DEPLOY_DIR/repo.tar.gz
+            chmod +x $DEPLOY_DIR/deploy.sh
+            cd $DEPLOY_DIR
+            ./deploy.sh
 
       # ── optional: re-seed database ────────────────────────────────────────
       - name: Seed demo database
