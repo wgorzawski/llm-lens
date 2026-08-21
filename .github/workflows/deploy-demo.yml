@@ -82,10 +82,10 @@ jobs:
           printf 'PORT=3031\n' > /tmp/web.env
 
           rsync -az -e "$RSYNC_SSH" /tmp/api.env \
-            ${{ secrets.DEMO_SSH_USER }}@${{ secrets.DEMO_SSH_HOST }}:/home/llm-lens/.env.llm-lens-api
+            ${{ secrets.DEMO_SSH_USER }}@${{ secrets.DEMO_SSH_HOST }}:/home/mikrus/llm-lens-prod/.env.llm-lens-api
 
           rsync -az -e "$RSYNC_SSH" /tmp/web.env \
-            ${{ secrets.DEMO_SSH_USER }}@${{ secrets.DEMO_SSH_HOST }}:/home/llm-lens/.env.llm-lens-web
+            ${{ secrets.DEMO_SSH_USER }}@${{ secrets.DEMO_SSH_HOST }}:/home/mikrus/llm-lens-prod/.env.llm-lens-web
 
       # ── archive build ────────────────────────────────────────────────────
       - name: Archive build
@@ -109,7 +109,7 @@ jobs:
           username: ${{ secrets.DEMO_SSH_USER }}
           key: ${{ secrets.DEMO_SSH_KEY }}
           source: "repo.tar.gz"
-          target: "/home/llm-lens"
+          target: "/home/mikrus/llm-lens-prod"
 
       # ── extract & run deploy.sh ────────────────────────────────────────
       - name: SSH deploy
@@ -120,7 +120,7 @@ jobs:
           username: ${{ secrets.DEMO_SSH_USER }}
           key: ${{ secrets.DEMO_SSH_KEY }}
           script: |
-            DEPLOY_DIR=/home/llm-lens
+            DEPLOY_DIR=/home/mikrus/llm-lens-prod
 
             # Wyczyść stare apps/packages przed rozpakowaniem (tar nie usuwa
             # plików, których nie ma w nowym archiwum).
@@ -140,7 +140,7 @@ jobs:
             set -e
             export NVM_DIR="$HOME/.nvm"
             [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
-            cd /home/llm-lens
+            cd /home/mikrus/llm-lens-prod
             echo "→ wiping and re-seeding demo database"
             rm -f apps/api/demo.db
             pm2 restart llm-lens-api-prod
