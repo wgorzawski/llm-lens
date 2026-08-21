@@ -10,15 +10,15 @@
     "typecheck": "vue-tsc --noEmit"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.52.0",
+    "@anthropic-ai/sdk": "0.52.0",
     "@llm-lens/instrument": "workspace:*",
-    "openai": "^4",
-    "vue": "^3.5.13"
+    "openai": "4",
+    "vue": "3.5.13"
   },
   "devDependencies": {
-    "@vitejs/plugin-vue": "^5.2.4",
-    "typescript": "^5.8.3",
-    "vite": "^6.3.5",
-    "vue-tsc": "^2.2.10"
+    "@vitejs/plugin-vue": "5.2.4",
+    "typescript": "5.8.3",
+    "vite": "6.3.5",
+    "vue-tsc": "2.2.10"
   }
 }
