@@ -5,12 +5,10 @@
     "helpers:pinGitHubActionDigests"
   ],
   "timezone": "Europe/Warsaw",
-  "schedule": ["before 6am on monday"],
   "rangeStrategy": "pin",
   "postUpdateOptions": ["pnpmDedupe"],
   "lockFileMaintenance": {
-    "enabled": true,
-    "schedule": ["before 6am on monday"]
+    "enabled": true
   },
   "labels": ["dependencies"],
   "packageRules": [
