@@ -1,7 +1,7 @@
 module.exports = {
   apps: [
     {
-      name: "demo-api",
+      name: "llm-lens-api-prod",
       cwd: "/home/llm-lens/apps/api",
       script: "node",
       args: "dist/index.js",
@@ -10,7 +10,7 @@ module.exports = {
       max_memory_restart: "300M",
     },
     {
-      name: "demo-web",
+      name: "llm-lens-prod",
       cwd: "/home/llm-lens/apps/web",
       script: "node",
       args: ".output/server/index.mjs",
