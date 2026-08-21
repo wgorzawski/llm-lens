@@ -47,9 +47,12 @@ fi
 # utrzymywanego pliku na serwerze jak w xposter/fudini) i rsync'owane PRZED
 # tym deployem do stałej ścieżki poza katalogami apps/packages, żeby
 # przetrwały `rm -rf apps packages` przy rozpakowywaniu nowego archiwum.
+# Ścieżka jest liczona względem cwd (katalogu deployu), a nie $HOME - ten
+# skrypt jest zawsze odpalany po `cd $DEPLOY_DIR`, a $HOME usera SSH nie musi
+# wskazywać na ten katalog.
 echo '>>> copy .env files'
-cp "$HOME/.env.llm-lens-api" "apps/api/.env"
-cp "$HOME/.env.llm-lens-web" "apps/web/.env"
+cp "./.env.llm-lens-api" "apps/api/.env"
+cp "./.env.llm-lens-web" "apps/web/.env"
 
 echo '>>> install production dependencies'
 # Ten sam wzorzec co w fudini/xposter: zamiana katalogu przez `mv` zamiast
