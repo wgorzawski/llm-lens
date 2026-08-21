@@ -2,7 +2,11 @@ module.exports = {
   apps: [
     {
       name: "llm-lens-api-prod",
-      cwd: "/home/llm-lens/apps/api",
+      // Relative to wherever `pm2 start`/`pm2 restart ecosystem.config.cjs` is invoked
+      // from (deploy.sh always `cd`s into the deploy dir first) - not hardcoded to a
+      // specific absolute path, so moving the deploy directory doesn't require editing
+      // this file too (papu-prod's move under /home/mikrus needed exactly this fix).
+      cwd: "apps/api",
       script: "node",
       // PM2's `env_file` option doesn't reliably apply on a fresh `pm2 start` of a
       // brand-new process name (only ever verified working for the pre-existing
@@ -18,7 +22,7 @@ module.exports = {
     },
     {
       name: "llm-lens-prod",
-      cwd: "/home/llm-lens/apps/web",
+      cwd: "apps/web",
       script: "node",
       args: ["--env-file=.env", ".output/server/index.mjs"],
       autorestart: true,
