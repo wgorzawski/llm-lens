@@ -20,11 +20,11 @@
     "apps/api/src/**/*.ts": "apps/api/node_modules/.bin/eslint --fix --no-warn-ignored"
   },
   "devDependencies": {
-    "concurrently": "^9.1.2",
-    "husky": "^9.1.7",
-    "lint-staged": "^17.0.8",
-    "tsx": "^4.19.4",
-    "typescript": "^5.8.3"
+    "concurrently": "9.1.2",
+    "husky": "9.1.7",
+    "lint-staged": "17.0.8",
+    "tsx": "4.19.4",
+    "typescript": "5.8.3"
   },
   "packageManager": "pnpm@11.1.2",
   "engines": {
