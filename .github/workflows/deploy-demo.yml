@@ -140,7 +140,7 @@ jobs:
             cd /home/llm-lens
             echo "→ wiping and re-seeding demo database"
             rm -f apps/api/demo.db
-            pm2 restart demo-api
+            pm2 restart llm-lens-api-prod
             echo "→ waiting for API..."
             for i in $(seq 1 20); do
               curl -sf http://localhost:3032/health && break
