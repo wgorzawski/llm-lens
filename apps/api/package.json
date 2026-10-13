@@ -30,7 +30,7 @@
     "reflect-metadata": "0.2.2"
   },
   "devDependencies": {
-    "@swc/core": "1.15.43",
+    "@swc/core": "1.16.18",
     "@types/bcryptjs": "3.0.0",
     "@types/nodemailer": "8.0.2",
     "@types/qrcode": "1.5.6",
