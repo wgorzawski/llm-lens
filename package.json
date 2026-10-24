@@ -20,7 +20,7 @@
     "apps/api/src/**/*.ts": "apps/api/node_modules/.bin/eslint --fix --no-warn-ignored"
   },
   "devDependencies": {
-    "concurrently": "9.1.2",
+    "concurrently": "9.2.5",
     "husky": "9.1.7",
     "lint-staged": "17.0.8",
     "tsx": "4.19.4",
