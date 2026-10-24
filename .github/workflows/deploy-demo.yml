@@ -19,11 +19,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version-file: ".nvmrc"
           cache: pnpm
@@ -102,7 +102,7 @@ jobs:
             .nvmrc
 
       - name: Upload archive
-        uses: appleboy/scp-action@v1
+        uses: appleboy/scp-action@ff85246acaad7bdce478db94a363cd2bf7c90345 # v1.0.0
         with:
           host: ${{ secrets.DEMO_SSH_HOST }}
           port: ${{ secrets.DEMO_SSH_PORT }}
@@ -113,7 +113,7 @@ jobs:
 
       # ── extract & run deploy.sh ────────────────────────────────────────
       - name: SSH deploy
-        uses: appleboy/ssh-action@v1
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
         with:
           host: ${{ secrets.DEMO_SSH_HOST }}
           port: ${{ secrets.DEMO_SSH_PORT }}
