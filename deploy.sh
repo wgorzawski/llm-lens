@@ -29,6 +29,10 @@ corepack enable
 if ! command -v pm2 >/dev/null 2>&1; then
   npm install -g pm2
   pm2 update
+  # Autostart po restarcie serwera (pm2-root.service z `pm2 startup`) ma na sztywno
+  # ścieżkę nvm wersji Node, pod którą go wygenerowano - odśwież go dla nowej wersji,
+  # inaczej po usunięciu starej żadna aplikacja nie wstanie po restarcie.
+  pm2 startup systemd -u "$(whoami)" --hp "$HOME" >/dev/null
 fi
 
 # 2️⃣ Sprawdzenie dostępności binarek
