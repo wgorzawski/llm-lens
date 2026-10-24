@@ -1,3 +1,17 @@
+const path = require("path");
+const fs = require("fs");
+const os = require("os");
+
+// PM2 caches a process's env (PATH included) from when it was first created, and `script: "node"`
+// was resolved through it - so bumping .nvmrc never moved these apps off Node 22.19.0 (still
+// running on it in Oct 2026, unpatched against CVE-2026-111497). Run the node binary of the
+// version from .nvmrc by absolute path and pin PATH to it too; deploy.sh re-creates the processes
+// on every deploy, so this is always re-read. Same approach as fudini.
+const NVMRC_VERSION = fs.readFileSync(path.resolve(__dirname, ".nvmrc"), "utf8").trim();
+const NODE_BIN_DIR = path.join(os.homedir(), ".nvm", "versions", "node", `v${NVMRC_VERSION}`, "bin");
+const NODE_BIN = path.join(NODE_BIN_DIR, "node");
+const PINNED_NODE_ENV = { PATH: `${NODE_BIN_DIR}:${process.env.PATH}` };
+
 module.exports = {
   apps: [
     {
@@ -7,7 +21,8 @@ module.exports = {
       // specific absolute path, so moving the deploy directory doesn't require editing
       // this file too (papu-prod's move under /home/mikrus needed exactly this fix).
       cwd: "apps/api",
-      script: "node",
+      script: NODE_BIN,
+      interpreter: "none",
       // PM2's `env_file` option doesn't reliably apply on a fresh `pm2 start` of a
       // brand-new process name (only ever verified working for the pre-existing
       // demo-api/demo-web processes, which had been running - and re-saved via
@@ -19,14 +34,17 @@ module.exports = {
       args: ["--env-file=.env", "dist/index.js"],
       autorestart: true,
       max_memory_restart: "300M",
+      env: PINNED_NODE_ENV,
     },
     {
       name: "llm-lens-prod",
       cwd: "apps/web",
-      script: "node",
+      script: NODE_BIN,
+      interpreter: "none",
       args: ["--env-file=.env", ".output/server/index.mjs"],
       autorestart: true,
       max_memory_restart: "400M",
+      env: PINNED_NODE_ENV,
     },
   ],
 };

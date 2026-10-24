@@ -19,15 +19,17 @@ nvm install "$NODE_VERSION_WANTED"
 nvm use "$NODE_VERSION_WANTED"
 
 corepack enable
-command -v pm2 >/dev/null 2>&1 || npm install -g pm2
 
 # Długo działający proces PM2 ("God process"), który zarządza wszystkimi
 # aplikacjami na tym serwerze (w tym fudini i xposter), zostaje przy wersji, z
-# jaką był ostatnio odpalony - nowsza instalacja CLI powyżej tego nie zmienia.
-# `pm2 update` bezpiecznie migruje daemon w miejscu, bez zabijania
-# zarządzanych procesów, więc można to odpalać bezwarunkowo przy każdym
-# deployu.
-pm2 update
+# jaką był ostatnio odpalony - `pm2 update` go migruje, ale przy okazji
+# restartuje WSZYSTKIE aplikacje na serwerze, więc tylko wtedy, gdy doszło
+# świeże pm2 (czyli po zmianie wersji Node) - tak jak w fudini, a nie przy
+# każdym deployu.
+if ! command -v pm2 >/dev/null 2>&1; then
+  npm install -g pm2
+  pm2 update
+fi
 
 # 2️⃣ Sprawdzenie dostępności binarek
 echo ">>> Node: $(node -v)"
@@ -125,13 +127,11 @@ for APP in "${APPS[@]}"; do
   PROCESS_NAME=$(get_process_name "$APP")
   echo ">>> PM2 starting $PROCESS_NAME"
 
-  if pm2 list | grep -q "$PROCESS_NAME"; then
-    echo ">>> Reloading $PROCESS_NAME..."
-    pm2 restart "$PROCESS_NAME" --update-env || echo "Nie udało się restart $PROCESS_NAME, uruchamiam nowy"
-  else
-    echo ">>> Starting new process $PROCESS_NAME..."
-    pm2 start ecosystem.config.cjs
-  fi
+  # delete + start zamiast `pm2 restart`: restart używa zapamiętanej
+  # konfiguracji procesu (binarka node, PATH), więc zmiany w
+  # ecosystem.config.cjs - np. nowa wersja Node z .nvmrc - nigdy by nie weszły.
+  pm2 delete "$PROCESS_NAME" 2>/dev/null || true
+  pm2 start ecosystem.config.cjs --only "$PROCESS_NAME"
 
   wait_for_health "$PROCESS_NAME" "$APP" "$(get_port "$APP")" || exit 1
 done
