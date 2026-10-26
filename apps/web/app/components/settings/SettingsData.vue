@@ -14,7 +14,10 @@ const shareData = computed({
   set: (val: boolean) => { void updatePreferences({ shareData: val }); },
 });
 
+const { blockedInDemo } = useDemoGuard();
+
 async function setRetention(days: number) {
+  if (blockedInDemo()) return;
   savingRetention.value = true;
   try {
     const updated = await updateOrg({ retentionDays: days });

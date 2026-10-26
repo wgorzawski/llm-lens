@@ -3,6 +3,7 @@ import type { ApiKey, CreatedApiKey } from "~/composables/useApiKeys";
 definePageMeta({ layout: "app" });
 
 const { keys: apiKeys, pending: keysPending, fetchKeys, createKey, updateKey, rotateKey, revokeKey, getWebhookSecret, rotateWebhookSecret, revealWebhookSecret } = useApiKeys();
+const { blockedInDemo } = useDemoGuard();
 
 await fetchKeys();
 
@@ -114,6 +115,7 @@ const rotateResult = ref<CreatedApiKey | null>(null);
 const rotatePending = ref(false);
 
 async function openRotate(k: ApiKey) {
+  if (blockedInDemo()) return;
   rotateTarget.value = k; rotateResult.value = null; rotateOpen.value = true;
   rotatePending.value = true;
   try { rotateResult.value = await rotateKey(k.id); }
@@ -127,6 +129,7 @@ function closeRotate() {
 // ── revoke ────────────────────────────────────────────────────────────────────
 const revokeError = ref<string | null>(null);
 async function onRevoke(k: ApiKey) {
+  if (blockedInDemo()) return;
   if (!confirm(`Revoke "${k.name}"? This cannot be undone.`)) return;
   try { await revokeKey(k.id); }
   catch (err) { revokeError.value = getErrorMessage(err); }
@@ -174,6 +177,7 @@ onMounted(async () => {
 
 async function onRevealWebhook() {
   if (whRevealed.value) { whRevealed.value = false; whFull.value = null; return; }
+  if (blockedInDemo()) return;
   try {
     const r = await revealWebhookSecret();
     whFull.value = r.key;
@@ -182,6 +186,7 @@ async function onRevealWebhook() {
 }
 
 async function onRotateWebhook() {
+  if (blockedInDemo()) return;
   if (!confirm("Rotate the webhook signing secret? All existing webhook signatures will be invalidated.")) return;
   whRotating.value = true;
   try {

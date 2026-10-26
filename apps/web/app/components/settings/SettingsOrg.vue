@@ -1,6 +1,7 @@
 <script setup lang="ts">
 const { org, updateOrg, uploadLogo, removeLogo } = useOrg();
 const apiBase = useRuntimeConfig().public.apiBase as string;
+const { blockedInDemo } = useDemoGuard();
 
 const logoInput = ref<HTMLInputElement | null>(null);
 const logoError = ref<string | null>(null);
@@ -15,6 +16,7 @@ async function onLogoChange(e: Event) {
 
 async function onRemoveLogo() {
   logoError.value = null;
+  if (blockedInDemo()) return;
   try { await removeLogo(); }
   catch (err) { logoError.value = getErrorMessage(err); }
 }
@@ -28,6 +30,7 @@ const orgError = ref<string | null>(null);
 const orgSaved = ref(false);
 
 async function saveOrg() {
+  if (blockedInDemo()) return;
   savingOrg.value = true;
   orgError.value = null;
   orgSaved.value = false;
@@ -78,7 +81,7 @@ async function saveOrg() {
             <template v-else>{{ (org?.name || 'O')[0]?.toUpperCase() }}</template>
           </div>
           <input ref="logoInput" type="file" accept=".jpg,.jpeg,.png,.gif,.webp,.svg" style="display:none" @change="onLogoChange" >
-          <button class="s-btn" @click="logoInput?.click()">Upload</button>
+          <button class="s-btn" @click="blockedInDemo() || logoInput?.click()">Upload</button>
           <button v-if="org?.logoUrl" class="s-btn" @click="onRemoveLogo">Remove</button>
           <span v-if="logoError" class="set-error" style="margin-top:4px">{{ logoError }}</span>
         </div>

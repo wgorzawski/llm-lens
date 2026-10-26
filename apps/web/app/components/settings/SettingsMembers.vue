@@ -2,6 +2,7 @@
 import type { MemberRole, OrgMember } from "~/composables/useOrgMembers";
 
 const { members, inviteMember, updateRole, removeMember } = useOrgMembers();
+const { blockedInDemo } = useDemoGuard();
 
 const memberRoles: MemberRole[] = ["admin", "member", "viewer"];
 const inviteEmail = ref("");
@@ -13,6 +14,7 @@ const lastInviteUrl = ref<string | null>(null);
 
 async function submitInvite() {
   if (!inviteEmail.value.trim()) return;
+  if (blockedInDemo()) return;
   inviting.value = true;
   inviteError.value = null;
   try {
@@ -52,6 +54,7 @@ async function onMemberAction(m: OrgMember, actionId: string) {
     await navigator.clipboard.writeText(`${frontendUrl}/invite/${m.inviteToken}`);
     return;
   }
+  if (blockedInDemo()) return;
   if (actionId === "remove") {
     await removeMember(m.id);
     return;

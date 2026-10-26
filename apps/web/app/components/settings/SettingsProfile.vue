@@ -17,6 +17,7 @@ async function onAvatarChange(e: Event) {
 
 async function onRemoveAvatar() {
   avatarError.value = null;
+  if (blockedInDemo()) return;
   try { await removeAvatar(); }
   catch (err) { avatarError.value = getErrorMessage(err); }
 }
@@ -98,7 +99,7 @@ async function saveProfile() {
         </div>
         <div class="profile-avatar-actions">
           <input ref="avatarInput" type="file" accept=".jpg,.jpeg,.png,.gif,.webp" style="display:none" @change="onAvatarChange" >
-          <button class="s-btn" @click="avatarInput?.click()">Upload photo</button>
+          <button class="s-btn" @click="blockedInDemo() || avatarInput?.click()">Upload photo</button>
           <button v-if="me?.avatarUrl" class="s-btn" @click="onRemoveAvatar">Remove</button>
           <div class="set-row-hint" style="margin-top:4px">JPG, PNG, or GIF · max 2MB</div>
           <span v-if="avatarError" class="set-error">{{ avatarError }}</span>
