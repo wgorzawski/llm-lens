@@ -5,21 +5,19 @@ const apiBase = useRuntimeConfig().public.apiBase as string;
 
 // ── avatar ────────────────────────────────────────────────────────────────────
 const avatarInput = ref<HTMLInputElement | null>(null);
-const avatarError = ref<string | null>(null);
+const toast = useToast();
 
 async function onAvatarChange(e: Event) {
   const file = (e.target as HTMLInputElement).files?.[0];
   if (!file) return;
-  avatarError.value = null;
-  try { await uploadAvatar(file); }
-  catch (err) { avatarError.value = getErrorMessage(err); }
+  try { await uploadAvatar(file); toast.success("Profile photo updated"); }
+  catch (err) { toast.error(err, "Couldn't upload the photo"); }
 }
 
 async function onRemoveAvatar() {
-  avatarError.value = null;
   if (blockedInDemo()) return;
-  try { await removeAvatar(); }
-  catch (err) { avatarError.value = getErrorMessage(err); }
+  try { await removeAvatar(); toast.success("Profile photo removed"); }
+  catch (err) { toast.error(err); }
 }
 
 // ── email change ──────────────────────────────────────────────────────────────
@@ -29,19 +27,16 @@ const newEmail = ref("");
 const emailPassword = ref("");
 const savingEmail = ref(false);
 const emailError = ref<string | null>(null);
-const emailSaved = ref(false);
 
 async function submitEmailChange() {
   emailError.value = null;
-  emailSaved.value = false;
   savingEmail.value = true;
   try {
     await changeEmail(newEmail.value, emailPassword.value);
-    emailSaved.value = true;
     showEmailForm.value = false;
+    toast.success(`Email changed to ${newEmail.value}`);
     newEmail.value = "";
     emailPassword.value = "";
-    setTimeout(() => (emailSaved.value = false), 2000);
   } catch (err) {
     emailError.value = getErrorMessage(err);
   } finally {
@@ -57,14 +52,12 @@ const dateFormat = ref(me.value?.dateFormat || "iso");
 
 const savingProfile = ref(false);
 const profileError = ref<string | null>(null);
-const profileSaved = ref(false);
 
 const myRole = computed(() => members.value.find((m) => m.email === me.value?.email)?.role ?? "owner");
 
 async function saveProfile() {
   savingProfile.value = true;
   profileError.value = null;
-  profileSaved.value = false;
   try {
     await updateProfile({
       displayName: displayName.value,
@@ -73,8 +66,7 @@ async function saveProfile() {
       locale: locale.value,
       dateFormat: dateFormat.value,
     });
-    profileSaved.value = true;
-    setTimeout(() => (profileSaved.value = false), 2000);
+    toast.success("Profile saved");
   } catch (err) {
     profileError.value = getErrorMessage(err);
   } finally {
@@ -102,7 +94,6 @@ async function saveProfile() {
           <button class="s-btn" @click="blockedInDemo() || avatarInput?.click()">Upload photo</button>
           <button v-if="me?.avatarUrl" class="s-btn" @click="onRemoveAvatar">Remove</button>
           <div class="set-row-hint" style="margin-top:4px">JPG, PNG, or GIF · max 2MB</div>
-          <span v-if="avatarError" class="set-error">{{ avatarError }}</span>
         </div>
       </div>
 
@@ -147,7 +138,6 @@ async function saveProfile() {
               <button class="s-btn" @click="showEmailForm = false; emailError = null">Cancel</button>
             </div>
             <span v-if="emailError" class="set-error">{{ emailError }}</span>
-            <span v-else-if="emailSaved" class="set-saved">Email updated</span>
           </template>
         </div>
       </div>
@@ -213,7 +203,6 @@ async function saveProfile() {
     </div>
     <div class="set-row-actions">
       <span v-if="profileError" class="set-error">{{ profileError }}</span>
-      <span v-else-if="profileSaved" class="set-saved">Saved</span>
       <button class="s-btn primary" :disabled="savingProfile" @click="saveProfile">{{ savingProfile ? "Saving…" : "Save changes" }}</button>
     </div>
   </section>

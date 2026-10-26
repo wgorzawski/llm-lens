@@ -4,21 +4,19 @@ const apiBase = useRuntimeConfig().public.apiBase as string;
 const { blockedInDemo } = useDemoGuard();
 
 const logoInput = ref<HTMLInputElement | null>(null);
-const logoError = ref<string | null>(null);
+const toast = useToast();
 
 async function onLogoChange(e: Event) {
   const file = (e.target as HTMLInputElement).files?.[0];
   if (!file) return;
-  logoError.value = null;
-  try { await uploadLogo(file); }
-  catch (err) { logoError.value = getErrorMessage(err); }
+  try { await uploadLogo(file); toast.success("Logo updated"); }
+  catch (err) { toast.error(err, "Couldn't upload the logo"); }
 }
 
 async function onRemoveLogo() {
-  logoError.value = null;
   if (blockedInDemo()) return;
-  try { await removeLogo(); }
-  catch (err) { logoError.value = getErrorMessage(err); }
+  try { await removeLogo(); toast.success("Logo removed"); }
+  catch (err) { toast.error(err); }
 }
 
 const orgName = ref(org.value?.name ?? "");
@@ -27,18 +25,15 @@ const orgDefaultEnv = ref(org.value?.defaultEnv ?? "production");
 
 const savingOrg = ref(false);
 const orgError = ref<string | null>(null);
-const orgSaved = ref(false);
 
 async function saveOrg() {
   if (blockedInDemo()) return;
   savingOrg.value = true;
   orgError.value = null;
-  orgSaved.value = false;
   try {
     const updated = await updateOrg({ name: orgName.value, slug: orgSlug.value, defaultEnv: orgDefaultEnv.value });
     orgSlug.value = updated.slug;
-    orgSaved.value = true;
-    setTimeout(() => (orgSaved.value = false), 2000);
+    toast.success("Organization settings saved");
   } catch (err) {
     orgError.value = getErrorMessage(err);
   } finally {
@@ -83,7 +78,6 @@ async function saveOrg() {
           <input ref="logoInput" type="file" accept=".jpg,.jpeg,.png,.gif,.webp,.svg" style="display:none" @change="onLogoChange" >
           <button class="s-btn" @click="blockedInDemo() || logoInput?.click()">Upload</button>
           <button v-if="org?.logoUrl" class="s-btn" @click="onRemoveLogo">Remove</button>
-          <span v-if="logoError" class="set-error" style="margin-top:4px">{{ logoError }}</span>
         </div>
       </div>
       <div class="set-row">
@@ -99,7 +93,6 @@ async function saveOrg() {
     </div>
     <div class="set-row-actions">
       <span v-if="orgError" class="set-error">{{ orgError }}</span>
-      <span v-else-if="orgSaved" class="set-saved">Saved</span>
       <button class="s-btn primary" :disabled="savingOrg" @click="saveOrg">{{ savingOrg ? "Saving…" : "Save changes" }}</button>
     </div>
   </section>

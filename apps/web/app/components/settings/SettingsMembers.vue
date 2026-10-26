@@ -3,6 +3,7 @@ import type { MemberRole, OrgMember } from "~/composables/useOrgMembers";
 
 const { members, inviteMember, updateRole, removeMember } = useOrgMembers();
 const { blockedInDemo } = useDemoGuard();
+const toast = useToast();
 
 const memberRoles: MemberRole[] = ["admin", "member", "viewer"];
 const inviteEmail = ref("");
@@ -18,9 +19,11 @@ async function submitInvite() {
   inviting.value = true;
   inviteError.value = null;
   try {
-    const result = await inviteMember(inviteEmail.value.trim(), inviteRole.value);
+    const email = inviteEmail.value.trim();
+    const result = await inviteMember(email, inviteRole.value);
     lastInviteUrl.value = result.inviteUrl;
     inviteEmail.value = "";
+    toast.success(`Invite created for ${email} - share the link below`);
   } catch (err) {
     inviteError.value = getErrorMessage(err);
   } finally {
@@ -30,7 +33,7 @@ async function submitInvite() {
 
 async function copyInviteLink() {
   if (!lastInviteUrl.value) return;
-  await navigator.clipboard.writeText(lastInviteUrl.value);
+  await copyWithToast(lastInviteUrl.value, "Invite link copied");
 }
 
 function memberActions(m: OrgMember) {
@@ -51,16 +54,23 @@ function memberActions(m: OrgMember) {
 async function onMemberAction(m: OrgMember, actionId: string) {
   if (actionId === "copy") {
     const frontendUrl = window.location.origin;
-    await navigator.clipboard.writeText(`${frontendUrl}/invite/${m.inviteToken}`);
+    await copyWithToast(`${frontendUrl}/invite/${m.inviteToken}`, "Invite link copied");
     return;
   }
   if (blockedInDemo()) return;
-  if (actionId === "remove") {
-    await removeMember(m.id);
-    return;
-  }
-  if (actionId.startsWith("role:")) {
-    await updateRole(m.id, actionId.slice("role:".length) as MemberRole);
+  try {
+    if (actionId === "remove") {
+      await removeMember(m.id);
+      toast.success(m.status === "pending" ? `Invite for ${m.email} revoked` : `${m.email} removed from the organization`);
+      return;
+    }
+    if (actionId.startsWith("role:")) {
+      const role = actionId.slice("role:".length) as MemberRole;
+      await updateRole(m.id, role);
+      toast.success(`${m.email} is now ${role === "admin" ? "an" : "a"} ${role}`);
+    }
+  } catch (err) {
+    toast.error(err);
   }
 }
 </script>

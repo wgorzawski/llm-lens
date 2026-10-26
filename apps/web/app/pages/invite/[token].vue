@@ -43,6 +43,7 @@ async function acceptInvite() {
       headers: { Authorization: `Bearer ${token.value}` },
     });
     await navigateTo("/");
+    useToast().success(`You joined ${preview.value?.orgName ?? "the organization"}`);
   } catch (err) {
     const e = err as { data?: { error?: string }; message?: string };
     acceptError.value = e.data?.error ?? e.message ?? "Failed to accept invite";

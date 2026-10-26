@@ -6,13 +6,13 @@ const { token } = useAuth();
 
 const orgSlug = computed(() => org.value?.slug ?? "");
 const { blockedInDemo } = useDemoGuard();
+const toast = useToast();
 
 // ── Transfer ownership ────────────────────────────────────────────────────────
 const showTransfer = ref(false);
 const transferEmail = ref("");
 const transferring = ref(false);
 const transferError = ref<string | null>(null);
-const transferDone = ref(false);
 
 async function doTransfer() {
   transferError.value = null;
@@ -27,7 +27,7 @@ async function doTransfer() {
       const data = await res.json().catch(() => ({}));
       throw new Error((data as { error?: string }).error ?? "Transfer failed");
     }
-    transferDone.value = true;
+    toast.success(`Ownership transferred to ${transferEmail.value}`);
     transferEmail.value = "";
     showTransfer.value = false;
     await fetchOrg();
@@ -43,7 +43,6 @@ const showWipe = ref(false);
 const wipeConfirm = ref("");
 const wiping = ref(false);
 const wipeError = ref<string | null>(null);
-const wipeDone = ref(false);
 
 async function doWipe() {
   wipeError.value = null;
@@ -57,7 +56,7 @@ async function doWipe() {
       const data = await res.json().catch(() => ({}));
       throw new Error((data as { error?: string }).error ?? "Wipe failed");
     }
-    wipeDone.value = true;
+    toast.success("All traces deleted");
     wipeConfirm.value = "";
     showWipe.value = false;
   } catch (err) {
@@ -86,6 +85,7 @@ async function doDelete() {
       throw new Error((data as { error?: string }).error ?? "Delete failed");
     }
     await router.push("/");
+    toast.success("Organization deleted");
   } catch (err) {
     deleteError.value = getErrorMessage(err);
     deleting.value = false;
@@ -116,7 +116,6 @@ async function doDelete() {
         </button>
         <button class="s-btn" @click="showTransfer = false; transferError = null">Cancel</button>
         <span v-if="transferError" class="set-error">{{ transferError }}</span>
-        <span v-if="transferDone" class="set-saved">Ownership transferred.</span>
       </div>
 
       <!-- Wipe traces -->
@@ -135,7 +134,6 @@ async function doDelete() {
         </button>
         <button class="s-btn" @click="showWipe = false; wipeError = null; wipeConfirm = ''">Cancel</button>
         <span v-if="wipeError" class="set-error">{{ wipeError }}</span>
-        <span v-if="wipeDone" class="set-saved">All traces deleted.</span>
       </div>
 
       <!-- Delete organization -->

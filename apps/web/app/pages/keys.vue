@@ -4,6 +4,7 @@ definePageMeta({ layout: "app" });
 
 const { keys: apiKeys, pending: keysPending, fetchKeys, createKey, updateKey, rotateKey, revokeKey, getWebhookSecret, rotateWebhookSecret, revealWebhookSecret } = useApiKeys();
 const { blockedInDemo } = useDemoGuard();
+const toast = useToast();
 
 await fetchKeys();
 
@@ -65,6 +66,7 @@ async function submitCreate() {
   createPending.value = true; createError.value = null;
   try {
     createResult.value = await createKey(createName.value.trim(), createEnv.value, [...createScopes.value]);
+    toast.success("API key created - copy it now, it won't be shown again");
   } catch (err) {
     createError.value = getErrorMessage(err);
   } finally {
@@ -101,6 +103,7 @@ async function submitEdit() {
   try {
     await updateKey(editTarget.value.id, { name: editName.value.trim(), scopes: [...editScopes.value] });
     closeEdit();
+    toast.success("API key updated");
   } catch (err) {
     editError.value = getErrorMessage(err);
   } finally {
@@ -118,8 +121,13 @@ async function openRotate(k: ApiKey) {
   if (blockedInDemo()) return;
   rotateTarget.value = k; rotateResult.value = null; rotateOpen.value = true;
   rotatePending.value = true;
-  try { rotateResult.value = await rotateKey(k.id); }
-  finally { rotatePending.value = false; }
+  try {
+    rotateResult.value = await rotateKey(k.id);
+    toast.success(`Token for "${k.name}" rotated - the old one stops working now`);
+  } catch (err) {
+    rotateOpen.value = false;
+    toast.error(err, "Couldn't rotate the token");
+  } finally { rotatePending.value = false; }
 }
 function closeRotate() {
   rotateOpen.value = false;
@@ -127,19 +135,18 @@ function closeRotate() {
 }
 
 // ── revoke ────────────────────────────────────────────────────────────────────
-const revokeError = ref<string | null>(null);
 async function onRevoke(k: ApiKey) {
   if (blockedInDemo()) return;
   if (!confirm(`Revoke "${k.name}"? This cannot be undone.`)) return;
-  try { await revokeKey(k.id); }
-  catch (err) { revokeError.value = getErrorMessage(err); }
+  try { await revokeKey(k.id); toast.success(`API key "${k.name}" revoked`); }
+  catch (err) { toast.error(err); }
 }
 
 // ── disable / enable ──────────────────────────────────────────────────────────
 async function toggleStatus(k: ApiKey) {
   const next = k.status === "active" ? "disabled" : "active";
-  try { await updateKey(k.id, { status: next }); }
-  catch (err) { revokeError.value = getErrorMessage(err); }
+  try { await updateKey(k.id, { status: next }); toast.success(`API key "${k.name}" ${next === "active" ? "enabled" : "disabled"}`); }
+  catch (err) { toast.error(err); }
 }
 
 // ── context menu ──────────────────────────────────────────────────────────────
@@ -155,7 +162,7 @@ function toggleReveal(id: string) {
   if (s.has(id)) { s.delete(id); } else { s.add(id); }
   revealed.value = s;
 }
-function copyText(text: string) { navigator.clipboard?.writeText(text); }
+function copyText(text: string) { void copyWithToast(text); }
 
 // ── quickstart ────────────────────────────────────────────────────────────────
 const qsTab = ref<"curl" | "node" | "python">("curl");
@@ -182,7 +189,7 @@ async function onRevealWebhook() {
     const r = await revealWebhookSecret();
     whFull.value = r.key;
     whRevealed.value = true;
-  } catch { /* ignore */ }
+  } catch (err) { toast.error(err, "Couldn't reveal the webhook secret"); }
 }
 
 async function onRotateWebhook() {
@@ -194,6 +201,9 @@ async function onRotateWebhook() {
     whFull.value = r.key;
     whRevealed.value = true;
     whSecret.value = { masked: `whsec_${"•".repeat(20)}`, prefix: "whsec_", tail: r.key.slice(-4) };
+    toast.success("Webhook secret rotated - update it in your webhook receivers");
+  } catch (err) {
+    toast.error(err, "Couldn't rotate the webhook secret");
   } finally {
     whRotating.value = false;
   }
@@ -293,7 +303,6 @@ onMounted(() => {
       </div>
 
       <!-- error -->
-      <div v-if="revokeError" class="ak-err">{{ revokeError }}</div>
 
       <!-- ── keys table ──────────────────────────────────────────────────────── -->
       <div class="ak-table">

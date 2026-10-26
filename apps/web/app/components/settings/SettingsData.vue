@@ -5,13 +5,18 @@ const { me, updatePreferences } = useMe();
 
 const retention = ref(org.value?.retentionDays ?? 7);
 const savingRetention = ref(false);
+const toast = useToast();
+function savePreference(update: Record<string, unknown>, message: string) {
+  updatePreferences(update).then(() => toast.success(message)).catch((err: unknown) => toast.error(err));
+}
+
 const maskPII = computed({
   get: () => (me.value?.preferences?.maskPII as boolean | undefined) ?? true,
-  set: (val: boolean) => { void updatePreferences({ maskPII: val }); },
+  set: (val: boolean) => savePreference({ maskPII: val }, val ? "PII masking turned on" : "PII masking turned off"),
 });
 const shareData = computed({
   get: () => (me.value?.preferences?.shareData as boolean | undefined) ?? false,
-  set: (val: boolean) => { void updatePreferences({ shareData: val }); },
+  set: (val: boolean) => savePreference({ shareData: val }, val ? "Usage data sharing turned on" : "Usage data sharing turned off"),
 });
 
 const { blockedInDemo } = useDemoGuard();
@@ -22,35 +27,50 @@ async function setRetention(days: number) {
   try {
     const updated = await updateOrg({ retentionDays: days });
     retention.value = updated.retentionDays;
+    toast.success(`Traces are now kept for ${days} ${days === 1 ? "day" : "days"}`);
+  } catch (err) {
+    toast.error(err);
   } finally {
     savingRetention.value = false;
   }
 }
 
 async function downloadTracesExport() {
-  const res = await fetch(`${useRuntimeConfig().public.apiBase}/export/traces`, {
-    headers: { Authorization: `Bearer ${token.value}` },
-  });
-  const blob = await res.blob();
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "traces.jsonl.gz";
-  a.click();
-  URL.revokeObjectURL(url);
+  try {
+    const res = await fetch(`${useRuntimeConfig().public.apiBase}/export/traces`, {
+      headers: { Authorization: `Bearer ${token.value}` },
+    });
+    if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as { error?: string }).error ?? "Export failed");
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "traces.jsonl.gz";
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("Traces export downloaded");
+  } catch (err) {
+    toast.error(err);
+  }
 }
 
 async function downloadUsageExport() {
-  const res = await fetch(`${useRuntimeConfig().public.apiBase}/export/usage`, {
-    headers: { Authorization: `Bearer ${token.value}` },
-  });
-  const blob = await res.blob();
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "usage.csv";
-  a.click();
-  URL.revokeObjectURL(url);
+  try {
+    const res = await fetch(`${useRuntimeConfig().public.apiBase}/export/usage`, {
+      headers: { Authorization: `Bearer ${token.value}` },
+    });
+    if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as { error?: string }).error ?? "Export failed");
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "usage.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("Usage report downloaded");
+  } catch (err) {
+    toast.error(err);
+  }
 }
 </script>
 

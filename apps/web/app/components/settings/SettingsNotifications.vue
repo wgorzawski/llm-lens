@@ -13,9 +13,17 @@ const notifs = reactive({
   inAppAssignments: savedNotifs.inAppAssignments ?? true,
 });
 
+const toast = useToast();
+
 async function toggleNotif(key: keyof typeof notifs) {
   notifs[key] = !notifs[key];
-  await updatePreferences({ notifications: { ...notifs } });
+  try {
+    await updatePreferences({ notifications: { ...notifs } });
+    toast.success("Notification settings saved");
+  } catch (err) {
+    notifs[key] = !notifs[key]; // revert the switch
+    toast.error(err);
+  }
 }
 
 const slackWebhookUrl = ref((me.value?.preferences?.slackWebhookUrl as string) || "");
@@ -25,75 +33,74 @@ const pagerdutySaving = ref(false);
 
 async function savePagerduty() {
   pagerdutySaving.value = true;
-  try { await updatePreferences({ pagerdutyKey: pagerdutyKey.value }); }
+  try { await updatePreferences({ pagerdutyKey: pagerdutyKey.value }); toast.success("PagerDuty connected"); }
+  catch (err) { toast.error(err); }
   finally { pagerdutySaving.value = false; }
 }
 
 async function disconnectPagerduty() {
   pagerdutyKey.value = "";
-  await updatePreferences({ pagerdutyKey: "" });
+  try { await updatePreferences({ pagerdutyKey: "" }); toast.success("PagerDuty disconnected"); }
+  catch (err) { toast.error(err); }
 }
 const slackConnected = computed(() => !!slackWebhookUrl.value);
 const slackSaving = ref(false);
-const slackTestResult = ref<string | null>(null);
 
 async function saveSlackWebhook() {
   slackSaving.value = true;
-  slackTestResult.value = null;
-  try {
-    await updatePreferences({ slackWebhookUrl: slackWebhookUrl.value });
-  } finally {
-    slackSaving.value = false;
-  }
+  try { await updatePreferences({ slackWebhookUrl: slackWebhookUrl.value }); toast.success("Slack connected"); }
+  catch (err) { toast.error(err); }
+  finally { slackSaving.value = false; }
 }
 
 async function disconnectSlack() {
   slackWebhookUrl.value = "";
-  await updatePreferences({ slackWebhookUrl: "" });
+  try { await updatePreferences({ slackWebhookUrl: "" }); toast.success("Slack disconnected"); }
+  catch (err) { toast.error(err); }
 }
 
 async function testSlack() {
-  slackTestResult.value = null;
   try {
     const res = await fetch(slackWebhookUrl.value, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text: "LLM Lens test alert — your Slack integration is working." }),
     });
-    slackTestResult.value = res.ok ? "Test message sent." : `Slack responded with ${res.status}`;
+    if (res.ok) toast.success("Test message sent to Slack");
+    else toast.error(`Slack responded with ${res.status}`);
   } catch (err) {
-    slackTestResult.value = getErrorMessage(err);
+    toast.error(err, "Couldn't reach Slack");
   }
 }
 
 const outboundWebhookUrl = ref((me.value?.preferences?.outboundWebhookUrl as string) || "");
 const webhookConnected = computed(() => !!outboundWebhookUrl.value);
 const webhookSaving = ref(false);
-const webhookTestResult = ref<string | null>(null);
 
 async function saveWebhook() {
   webhookSaving.value = true;
-  webhookTestResult.value = null;
-  try { await updatePreferences({ outboundWebhookUrl: outboundWebhookUrl.value }); }
+  try { await updatePreferences({ outboundWebhookUrl: outboundWebhookUrl.value }); toast.success("Webhook saved"); }
+  catch (err) { toast.error(err); }
   finally { webhookSaving.value = false; }
 }
 
 async function disconnectWebhook() {
   outboundWebhookUrl.value = "";
-  await updatePreferences({ outboundWebhookUrl: "" });
+  try { await updatePreferences({ outboundWebhookUrl: "" }); toast.success("Webhook removed"); }
+  catch (err) { toast.error(err); }
 }
 
 async function testWebhook() {
-  webhookTestResult.value = null;
   try {
     const res = await fetch(outboundWebhookUrl.value, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ event: "trace.test", trace: null }),
     });
-    webhookTestResult.value = res.ok ? "Test payload sent." : `Endpoint responded with ${res.status}`;
+    if (res.ok) toast.success("Test payload delivered");
+    else toast.error(`Endpoint responded with ${res.status}`);
   } catch (err) {
-    webhookTestResult.value = getErrorMessage(err);
+    toast.error(err, "Couldn't reach the endpoint");
   }
 }
 </script>
@@ -205,7 +212,6 @@ async function testWebhook() {
           <button v-if="slackConnected" class="s-btn danger" @click="disconnectSlack">Disconnect</button>
         </div>
       </div>
-      <div v-if="slackTestResult" class="set-row-hint" style="padding:0 20px 12px">{{ slackTestResult }}</div>
       <div class="set-row">
         <div class="set-row-label">
           <div class="set-row-label-text">PagerDuty</div>
@@ -231,7 +237,6 @@ async function testWebhook() {
           <button v-if="webhookConnected" class="s-btn danger" @click="disconnectWebhook">Disconnect</button>
         </div>
       </div>
-      <div v-if="webhookTestResult" class="set-row-hint" style="padding:0 20px 12px">{{ webhookTestResult }}</div>
     </div>
   </section>
 </template>

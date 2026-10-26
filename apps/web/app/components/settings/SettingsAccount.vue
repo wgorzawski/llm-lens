@@ -6,11 +6,21 @@ const { setup: setupTwoFactor, verify: verifyTwoFactor, disable: disableTwoFacto
 const { sessions, fetchSessions, revoke: revokeSession } = useSessions();
 await fetchSessions();
 
+const toast = useToast();
 const twoFA = computed(() => me.value?.totpEnabled ?? false);
 const signinAlerts = computed({
   get: () => (me.value?.preferences?.signinAlerts as boolean | undefined) ?? true,
-  set: (val: boolean) => { void updatePreferences({ signinAlerts: val }); },
+  set: (val: boolean) => {
+    updatePreferences({ signinAlerts: val })
+      .then(() => toast.success(val ? "Sign-in alerts turned on" : "Sign-in alerts turned off"))
+      .catch((err: unknown) => toast.error(err));
+  },
 });
+
+async function onRevokeSession(id: string) {
+  try { await revokeSession(id); toast.success("Session signed out"); }
+  catch (err) { toast.error(err); }
+}
 
 const totpSetup = ref<TotpSetup | null>(null);
 const totpVerifyCode = ref("");
@@ -44,6 +54,7 @@ async function confirmTwoFactorSetup() {
     totpSetup.value = null;
     totpVerifyCode.value = "";
     await fetchMe();
+    toast.success("Two-factor authentication enabled - save your recovery codes");
   } catch (err) {
     totpError.value = getErrorMessage(err);
   } finally {
@@ -59,6 +70,7 @@ async function confirmDisableTwoFactor() {
     disableCode.value = "";
     showDisableForm.value = false;
     await fetchMe();
+    toast.success("Two-factor authentication disabled");
   } catch (err) {
     totpError.value = getErrorMessage(err);
   } finally {
@@ -73,6 +85,7 @@ async function regenerateCodes() {
   try {
     const { recoveryCodes } = await regenerateRecoveryCodes(code);
     revealedRecoveryCodes.value = recoveryCodes;
+    toast.success("New recovery codes generated - the old ones no longer work");
   } catch (err) {
     totpError.value = getErrorMessage(err);
   }
@@ -83,11 +96,9 @@ const newPasswordInput = ref("");
 const confirmPasswordInput = ref("");
 const savingPassword = ref(false);
 const passwordError = ref<string | null>(null);
-const passwordSaved = ref(false);
 
 async function changePassword() {
   passwordError.value = null;
-  passwordSaved.value = false;
   if (blockedInDemo()) return;
   if (newPasswordInput.value !== confirmPasswordInput.value) {
     passwordError.value = "Passwords do not match";
@@ -99,8 +110,7 @@ async function changePassword() {
     currentPasswordInput.value = "";
     newPasswordInput.value = "";
     confirmPasswordInput.value = "";
-    passwordSaved.value = true;
-    setTimeout(() => (passwordSaved.value = false), 2000);
+    toast.success("Password changed");
   } catch (err) {
     passwordError.value = getErrorMessage(err);
   } finally {
@@ -145,7 +155,6 @@ function relativeTime(iso: string): string {
       </div>
       <div class="set-row-actions">
         <span v-if="passwordError" class="set-error">{{ passwordError }}</span>
-        <span v-else-if="passwordSaved" class="set-saved">Password updated</span>
         <button class="s-btn primary" :disabled="savingPassword" @click="changePassword">{{ savingPassword ? "Updating…" : "Update password" }}</button>
       </div>
     </div>
@@ -239,7 +248,7 @@ function relativeTime(iso: string): string {
             <div class="session-meta mono">{{ s.ip }} · {{ s.userAgent }}</div>
           </div>
           <div class="session-time mono">{{ relativeTime(s.lastActiveAt) }}</div>
-          <button v-if="i !== 0" class="icon-btn xs" title="Revoke" @click="revokeSession(s.id)">
+          <button v-if="i !== 0" class="icon-btn xs" title="Revoke" @click="onRevokeSession(s.id)">
             <AppIcon name="x" :size="12" />
           </button>
         </div>

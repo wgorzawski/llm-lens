@@ -136,31 +136,32 @@ function handleRowClick(id: string, isCheckbox = false) {
   navigateTo(`/traces/${id}`);
 }
 
-const bulkError = ref<string | null>(null);
+const toast = useToast();
 const { blockedInDemo } = useDemoGuard();
 
 async function onRowMenuSelect(t: UnifiedTrace, action: string) {
   if (action === "delete") {
     if (blockedInDemo()) return;
-    try { await deleteOne(t.id); await fetchTraces(page.value.offset); }
-    catch (err) { bulkError.value = getErrorMessage(err); }
+    try { await deleteOne(t.id); await fetchTraces(page.value.offset); toast.success("Trace deleted"); }
+    catch (err) { toast.error(err); }
   } else if (action === "star") {
-    try { await setStarred(t.id, !t.starred); await fetchTraces(page.value.offset); }
-    catch (err) { bulkError.value = getErrorMessage(err); }
+    try { await setStarred(t.id, !t.starred); await fetchTraces(page.value.offset); toast.success(t.starred ? "Removed from starred" : "Added to starred"); }
+    catch (err) { toast.error(err); }
   } else if (action === "copy-link") {
-    navigator.clipboard?.writeText(`${window.location.origin}/traces/${t.id}`);
+    void copyWithToast(`${window.location.origin}/traces/${t.id}`, "Link copied");
   }
 }
 
 async function deleteSelected() {
-  bulkError.value = null;
   if (blockedInDemo()) return;
+  const count = selected.value.size;
   try {
     await deleteMany([...selected.value]);
     selected.value = new Set();
     await fetchTraces(0);
+    toast.success(`${count} ${count === 1 ? "trace" : "traces"} deleted`);
   } catch (err) {
-    bulkError.value = getErrorMessage(err);
+    toast.error(err);
   }
 }
 
@@ -173,6 +174,7 @@ function exportSelected() {
   a.download = `traces-export-${Date.now()}.json`;
   a.click();
   URL.revokeObjectURL(url);
+  toast.success(`Exported ${rows.length} ${rows.length === 1 ? "trace" : "traces"}`);
 }
 
 function compareDiff() {
@@ -455,7 +457,6 @@ const sortOptions = [
       </button>
     </div>
 
-    <div v-if="bulkError" class="bulk-error">{{ bulkError }}</div>
 </template>
 
 <style scoped>
@@ -687,20 +688,5 @@ const sortOptions = [
   border: 1px solid var(--border-1);
   padding: 0 4px; border-radius: 3px; margin-left: 2px;
 }
-
-/* ── Bulk error ── */
-.bulk-error {
-  position: fixed;
-  bottom: 64px; left: calc(var(--sidebar-w) + 50%);
-  transform: translateX(-50%);
-  background: oklch(0.68 0.20 25 / 0.12);
-  border: 1px solid oklch(0.68 0.20 25 / 0.4);
-  color: var(--danger);
-  padding: 6px 12px;
-  border-radius: var(--radius-md);
-  font-size: 12px;
-  z-index: 10;
-}
-
 
 </style>

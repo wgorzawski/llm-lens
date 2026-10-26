@@ -13,27 +13,29 @@ await fetchTrace();
 const notes = ref<TraceNote[]>(await fetchNotes());
 
 // ── actions: star / replay / delete / diff ────────────────────────────────────
-const actionError = ref<string | null>(null);
+const toast = useToast();
 const starring = ref(false);
 const replaying = ref(false);
 const deleting = ref(false);
 
 async function onToggleStar() {
   starring.value = true;
-  actionError.value = null;
-  try { await toggleStar(); }
-  catch (err) { actionError.value = getErrorMessage(err); }
+  try {
+    await toggleStar();
+    toast.success(trace.value?.starred ? "Added to starred" : "Removed from starred");
+  }
+  catch (err) { toast.error(err); }
   finally { starring.value = false; }
 }
 
 async function onReplay() {
   replaying.value = true;
-  actionError.value = null;
   try {
     const replayed = await replay();
     await navigateTo(`/traces/${replayed.id}`);
+    toast.success("Replay finished - showing the new trace");
   } catch (err) {
-    actionError.value = getErrorMessage(err);
+    toast.error(err, "Replay failed");
     replaying.value = false;
   }
 }
@@ -48,16 +50,16 @@ async function onMenuSelect(action: string) {
   if (action === "delete") {
     if (blockedInDemo()) return;
     deleting.value = true;
-    actionError.value = null;
     try {
       await remove();
       await navigateTo("/");
+      toast.success("Trace deleted");
     } catch (err) {
-      actionError.value = getErrorMessage(err);
+      toast.error(err);
       deleting.value = false;
     }
   } else if (action === "copy-link") {
-    navigator.clipboard?.writeText(window.location.href);
+    void copyWithToast(window.location.href, "Link copied");
   }
 }
 
@@ -69,13 +71,13 @@ async function postNote() {
   const body = noteBody.value.trim();
   if (!body) return;
   postingNote.value = true;
-  actionError.value = null;
   try {
     const note = await addNote(body);
     notes.value = [note, ...notes.value];
     noteBody.value = "";
+    toast.success("Note added");
   } catch (err) {
-    actionError.value = getErrorMessage(err);
+    toast.error(err);
   } finally {
     postingNote.value = false;
   }
@@ -182,10 +184,10 @@ const status = computed(() => trace.value ? traceStatus(trace.value) : { ok: tru
 
 
 function copyId() {
-  if (trace.value) navigator.clipboard?.writeText(trace.value.id);
+  if (trace.value) void copyWithToast(trace.value.id, "Trace ID copied");
 }
 function copyJson() {
-  if (trace.value) navigator.clipboard?.writeText(JSON.stringify(trace.value, null, 2));
+  if (trace.value) void copyWithToast(JSON.stringify(trace.value, null, 2), "JSON copied");
 }
 function downloadJson() {
   if (!trace.value) return;
@@ -281,7 +283,6 @@ function downloadJson() {
             </div>
           </div>
 
-          <div v-if="actionError" class="action-error">{{ actionError }}</div>
 
           <!-- meta strip -->
           <div class="meta-strip">
@@ -925,15 +926,6 @@ function downloadJson() {
 }
 .note-item-body { font-size: 12px; color: var(--text-0); white-space: pre-wrap; }
 .note-item-meta { font-size: 10px; color: var(--text-3); font-family: var(--font-mono); margin-top: 4px; }
-
-.action-error {
-  margin: 0 24px 8px;
-  padding: 8px 12px;
-  background: oklch(0.68 0.20 25 / 0.08);
-  border: 1px solid oklch(0.68 0.20 25 / 0.35);
-  border-radius: var(--radius-md);
-  font-size: 12px; color: var(--danger);
-}
 
 /* ── Buttons ── */
 .btn {
