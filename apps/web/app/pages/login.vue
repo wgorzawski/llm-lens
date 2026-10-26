@@ -25,6 +25,21 @@ const keepSignedIn = ref(true)
 const pendingToken = ref<string | null>(null)
 const twoFactorCode = ref('')
 
+const toast = useToast()
+
+// Messages from redirects that may happen during SSR, where snackbars can't be shown:
+// OAuth failures (?error=oauth_failed) and expired sessions (session_expired cookie,
+// set by useApiFetch).
+const sessionExpired = useCookie<string | null>('session_expired')
+onMounted(() => {
+  if (useRoute().query.error === 'oauth_failed') {
+    toast.error("Sign-in with Google or GitHub didn't work - please try again")
+  } else if (sessionExpired.value) {
+    toast.info('Your session has expired - please sign in again')
+  }
+  sessionExpired.value = null
+})
+
 async function goHome() {
   await navigateTo((useRoute().query.redirect as string) || '/')
 }
@@ -38,6 +53,8 @@ async function submit() {
       pendingToken.value = result.pendingToken
     } else {
       await goHome()
+      toast.clear()
+      toast.success(`Signed in as ${email.value}`)
     }
   } catch (err: unknown) {
     const e = err as { data?: { error?: string }; message?: string }
@@ -54,6 +71,8 @@ async function submitTwoFactor() {
   try {
     await loginTwoFactor(pendingToken.value, twoFactorCode.value)
     await goHome()
+    toast.clear()
+    toast.success(`Signed in as ${email.value}`)
   } catch (err: unknown) {
     const e = err as { data?: { error?: string }; message?: string }
     error.value = e.data?.error ?? e.message ?? 'Invalid code'

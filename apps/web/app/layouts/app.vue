@@ -4,6 +4,15 @@ const { me, fetchMe } = useMe();
 if (!me.value) await fetchMe();
 const route = useRoute();
 
+// Set by pages/auth/callback.vue after a successful Google / GitHub sign-in.
+onMounted(() => {
+  if (route.query.signed_in) {
+    useToast().success("Signed in");
+    const { signed_in: _, ...query } = route.query;
+    void navigateTo({ path: route.path, query }, { replace: true });
+  }
+});
+
 const collapsed = useState('sidebar-collapsed', () => false);
 const traceCount = useState("trace-count", () => 0);
 

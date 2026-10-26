@@ -2,6 +2,8 @@ export function useApiFetch() {
   const config = useRuntimeConfig();
   const apiBase = config.public.apiBase as string;
   const { token } = useAuth();
+  // Created up front: composables can't be called after an await during SSR.
+  const sessionExpired = useCookie<string | null>("session_expired", { maxAge: 60 });
 
   function authHeaders(): Record<string, string> {
     return token.value ? { Authorization: `Bearer ${token.value}` } : {};
@@ -11,6 +13,9 @@ export function useApiFetch() {
     path: string,
     options?: Parameters<typeof $fetch>[1],
   ): Promise<T> {
+    // Whether this request carried a token - several requests can fail with 401 at
+    // once, and only the first one sees token.value still set.
+    const sentToken = !!token.value;
     try {
       return await $fetch<T>(`${apiBase}${path}`, {
         ...options,
@@ -22,6 +27,10 @@ export function useApiFetch() {
       // 401 = token expired/invalid, 404 on /users/me = user wiped from DB
       if (status === 401 || (status === 404 && path === "/users/me")) {
         token.value = null;
+        // This can run during SSR and the auth middleware redirects again on the
+        // client, so a query param would get lost - a short-lived cookie survives
+        // both. The login page turns it into a snackbar.
+        if (sentToken) sessionExpired.value = "1";
         await navigateTo("/login");
       }
       throw err;

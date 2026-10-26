@@ -7,7 +7,8 @@ const { token } = useAuth();
 const urlToken = route.query.token as string | undefined;
 if (urlToken) {
   token.value = urlToken;
-  await navigateTo("/");
+  // the snackbar is shown by the app layout (this page may render on the server)
+  await navigateTo("/?signed_in=1");
 } else {
   await navigateTo("/login?error=oauth_failed");
 }

@@ -45,6 +45,9 @@ async function submit() {
   try {
     await register(email.value, password.value)
     await navigateTo((useRoute().query.redirect as string) || '/')
+    const toast = useToast()
+    toast.clear()
+    toast.success('Account created - welcome to LLM Lens')
   } catch (err: unknown) {
     const e = err as { data?: { error?: string }; message?: string }
     error.value = e.data?.error ?? e.message ?? 'Registration failed'

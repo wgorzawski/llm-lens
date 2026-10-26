@@ -37,9 +37,17 @@ export function useToast() {
     timers.set(toast.id, setTimeout(() => dismiss(toast.id), opts.durationMs ?? DURATION_MS[kind]));
   }
 
+  /** Remove all snackbars, e.g. stale errors once the user has signed in. */
+  function clear() {
+    for (const t of toasts.value) clearTimeout(timers.get(t.id));
+    timers.clear();
+    toasts.value = [];
+  }
+
   return {
     toasts,
     dismiss,
+    clear,
     success: (message: string) => show("success", message),
     info: (message: string, opts?: { tag?: string; durationMs?: number }) => show("info", message, opts),
     /** Accepts an Error / API error as well as a plain message. */

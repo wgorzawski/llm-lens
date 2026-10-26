@@ -35,6 +35,7 @@ export function useAuth() {
 
   function logout() {
     token.value = null;
+    useToast().success("Signed out");
     return navigateTo("/login");
   }
 
