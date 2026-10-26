@@ -1,770 +1,900 @@
 // Demo seed data. Used by the API itself in DEMO_MODE (services/demo-maintenance.ts)
-// to refill the shared demo account whenever it has no traces - so the public demo
-// heals itself instead of depending on a manual re-seed. Calls go through the real
-// API routes (via server.inject), so traces are parsed exactly like real ingests.
+// to fill the shared demo account. Most traces go through the real ingest routes (via
+// server.inject) so they are parsed exactly like real ones; error traces and replays
+// can't be produced by ingest, so those are inserted directly.
+//
+// Bump DEMO_SEED_VERSION whenever this content changes - the API then replaces the
+// demo account's traces on its next start (visitor accounts are left alone).
+
+import type { AnthropicRawLog, OpenAIRawLog, TraceMessage, UnifiedTrace, VercelAIRawLog } from "@llm-lens/types";
+import { parseAnthropicLog } from "@llm-lens/parsers";
+
+export const DEMO_SEED_VERSION = 2;
 
 export type DemoApiCall = (method: string, path: string, body?: unknown) => Promise<unknown>;
 
-function daysAgo(d: number): string {
-  return new Date(Date.now() - d * 24 * 60 * 60 * 1000).toISOString();
+export interface DemoSeedContext {
+  api: DemoApiCall;
+  /** Direct DB insert, for traces the ingest routes can't produce (errors, replays). */
+  insertTrace: (trace: UnifiedTrace, replayOf?: string) => Promise<void>;
 }
 
-function hoursAgo(h: number): string {
-  return new Date(Date.now() - h * 60 * 60 * 1000).toISOString();
+// ── helpers ───────────────────────────────────────────────────────────────────
+
+const MIN = 60_000;
+const HOUR = 60 * MIN;
+const DAY = 24 * HOUR;
+
+const ago = (ms: number): number => Date.now() - ms;
+const isoDate = (ms: number): string => new Date(ms).toISOString().slice(0, 10);
+
+const ALPHANUM = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+function rid(len: number): string {
+  let s = "";
+  for (let i = 0; i < len; i++) s += ALPHANUM[Math.floor(Math.random() * ALPHANUM.length)];
+  return s;
 }
+const anthropicId = () => `msg_01${rid(22)}`;
+const openaiId = () => `chatcmpl-${rid(29)}`;
+const vercelId = () => `aisdk_${rid(24)}`;
+const toolId = () => `toolu_01${rid(22)}`;
+const callId = () => `call_${rid(24)}`;
 
-// ── trace seeders ─────────────────────────────────────────────────────────────
+const tokens = (prompt: number, completion: number) =>
+  ({ prompt_tokens: prompt, completion_tokens: completion, total_tokens: prompt + completion });
+const vercelTokens = (prompt: number, completion: number) =>
+  ({ promptTokens: prompt, completionTokens: completion, totalTokens: prompt + completion });
 
-interface AnthropicPayload {
-  request: {
-    model: string;
-    messages: Array<{ role: string; content: string }>;
-    system?: string;
-    max_tokens: number;
-    tools?: unknown[];
-  };
-  response: {
-    id: string;
-    type: "message";
-    role: "assistant";
-    content: Array<{ type: string; text?: string; id?: string; name?: string; input?: unknown }>;
-    model: string;
-    stop_reason: string;
-    stop_sequence: null;
-    usage: { input_tokens: number; output_tokens: number };
-  };
-  timestamp: string;
-  durationMs: number;
-}
-
-interface OpenAIPayload {
-  request: {
-    model: string;
-    messages: Array<{ role: string; content: string }>;
-    max_tokens: number;
-    system?: string;
-  };
-  response: {
-    id: string;
-    object: "chat.completion";
-    created: number;
-    model: string;
-    choices: Array<{
-      index: number;
-      message: { role: "assistant"; content: string };
-      finish_reason: string;
-    }>;
-    usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
-  };
-  timestamp: string;
-  durationMs: number;
-}
-
-function uid() {
-  return Math.random().toString(36).slice(2, 10);
-}
-
-function randInt(min: number, max: number) {
+function randInt(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
-
-async function seedAnthropic(api: DemoApiCall, p: AnthropicPayload): Promise<string> {
-  const data = (await api("POST", "/traces/anthropic", p)) as { id: string };
-  return data.id;
+function pick<T>(items: readonly T[]): T {
+  return items[Math.floor(Math.random() * items.length)]!;
 }
 
-async function seedOpenAI(api: DemoApiCall, p: OpenAIPayload): Promise<string> {
-  const data = (await api("POST", "/traces/openai", p)) as { id: string };
-  return data.id;
+async function ingestAnthropic(ctx: DemoSeedContext, log: AnthropicRawLog): Promise<string> {
+  return ((await ctx.api("POST", "/traces/anthropic", log)) as { id: string }).id;
+}
+async function ingestOpenAI(ctx: DemoSeedContext, log: OpenAIRawLog): Promise<string> {
+  return ((await ctx.api("POST", "/traces/openai", log)) as { id: string }).id;
+}
+async function ingestVercel(ctx: DemoSeedContext, log: VercelAIRawLog): Promise<string> {
+  return ((await ctx.api("POST", "/traces/vercel-ai", log)) as { id: string }).id;
 }
 
-async function starTrace(api: DemoApiCall, id: string) {
-  await api("PATCH", `/traces/${id}`, { starred: true });
+// A failed LLM call: the request is recorded, there is no assistant reply.
+async function insertErrorTrace(
+  ctx: DemoSeedContext,
+  o: {
+    provider: "anthropic" | "openai" | "vercel-ai";
+    model: string;
+    timestamp: number;
+    durationMs: number;
+    statusCode: number;
+    error: string;
+    systemPrompt?: string;
+    messages: TraceMessage[];
+    inputTokens?: number;
+  },
+): Promise<string> {
+  const id = o.provider === "openai" ? openaiId() : o.provider === "anthropic" ? anthropicId() : vercelId();
+  await ctx.insertTrace({
+    id,
+    timestamp: new Date(o.timestamp).toISOString(),
+    messages: o.messages,
+    usage: { inputTokens: o.inputTokens ?? 0, outputTokens: 0 },
+    metadata: {
+      model: o.model,
+      provider: o.provider,
+      durationMs: o.durationMs,
+      costUsd: 0,
+      statusCode: o.statusCode,
+      error: o.error,
+      systemPrompt: o.systemPrompt,
+    },
+    raw: { error: { status: o.statusCode, message: o.error } },
+  });
+  return id;
 }
 
-async function addNote(api: DemoApiCall, id: string, body: string) {
-  await api("POST", `/traces/${id}/notes`, { body });
+// ── shared prompts and tools ──────────────────────────────────────────────────
+
+const SUPPORT_SYSTEM = `You are Nova, the support agent for Northwind Cloud (B2B analytics SaaS).
+
+## Tone
+- Friendly, concise, no corporate filler. Use the customer's first name.
+- Never blame the customer. Own mistakes on our side.
+
+## Billing policy
+- Duplicate charges: refund the duplicate immediately, no approval needed.
+- Refunds up to $500 can be issued by you; above that, escalate to billing@northwind.io.
+- Refunds land in 5-10 business days depending on the bank.
+- Plan downgrades take effect at the end of the billing period; no partial refunds.
+
+## Tools
+- Always verify the customer with lookup_customer before touching billing.
+- Use list_charges to confirm a billing problem before acting on it.
+- Explain every action you take in plain language.
+
+## Escalation
+Escalate to a human (handoff_to_human) for: legal threats, security incidents,
+data deletion requests, or anything you are not sure about.`;
+
+const SUPPORT_TOOLS = [
+  {
+    name: "lookup_customer",
+    description: "Find a customer account by e-mail. Returns plan, seats and account status.",
+    input_schema: {
+      type: "object",
+      properties: { email: { type: "string", format: "email" } },
+      required: ["email"],
+    },
+  },
+  {
+    name: "list_charges",
+    description: "List card charges for a customer, newest first.",
+    input_schema: {
+      type: "object",
+      properties: {
+        customer_id: { type: "string" },
+        since: { type: "string", format: "date", description: "ISO date, inclusive" },
+      },
+      required: ["customer_id"],
+    },
+  },
+  {
+    name: "issue_refund",
+    description: "Refund a charge, fully or partially. Max $500 without escalation.",
+    input_schema: {
+      type: "object",
+      properties: {
+        charge_id: { type: "string" },
+        amount_cents: { type: "integer" },
+        reason: { type: "string", enum: ["duplicate", "requested_by_customer", "service_issue"] },
+      },
+      required: ["charge_id", "amount_cents", "reason"],
+    },
+  },
+  {
+    name: "handoff_to_human",
+    description: "Escalate the conversation to the human support queue.",
+    input_schema: {
+      type: "object",
+      properties: { summary: { type: "string" }, priority: { type: "string", enum: ["low", "normal", "high"] } },
+      required: ["summary"],
+    },
+  },
+];
+
+const HANDBOOK_SYSTEM = `You answer employee questions using ONLY the handbook excerpts below.
+Cite sources as [n]. If the excerpts don't cover the question, say so and suggest asking People Ops.
+
+<handbook>
+[1] Remote work (section 4.2)
+Employees may work remotely from any country for up to 90 days per calendar year,
+provided the country is not on the restricted list (Appendix C) and the employee
+notifies their manager and People Ops at least 14 days in advance. Stays longer than
+90 days require a tax and immigration review, which People Ops arranges with our
+employer-of-record partner. Core collaboration hours (13:00-16:00 CET) still apply.
+
+[2] Restricted countries (Appendix C)
+Due to sanctions and data-protection requirements, remote work is not permitted from:
+Russia, Belarus, Iran, North Korea, Syria, Cuba. Access to production systems from
+these countries is blocked at the network level.
+
+[3] Home-office stipend (section 6.1)
+Full-time employees receive a monthly home-office stipend of EUR 75, paid with the
+salary. The stipend continues during temporary remote stays abroad. It is paused
+during unpaid leave and parental leave longer than 30 days.
+
+[4] Equipment (section 6.3)
+Laptops are replaced every 3 years. Monitors, chairs and desks can be expensed once
+every 4 years up to EUR 900 in total. Equipment remains company property and must be
+returned when leaving.
+
+[5] Parental leave (section 7.4)
+Birthing parents receive 20 weeks of fully paid leave, non-birthing parents 12 weeks.
+Leave can be split into at most three blocks within 18 months of the birth or adoption.
+
+[6] Learning budget (section 8.2)
+Every employee has a yearly learning budget of EUR 1,500 for courses, conferences and
+books. Unused budget does not roll over. Conference travel counts against the budget.
+
+[7] Travel (section 9.1)
+Book trains for trips under 6 hours. Flights must be economy class except for
+long-haul flights over 8 hours, where premium economy is allowed.
+</handbook>`;
+
+// ── showcase traces ───────────────────────────────────────────────────────────
+
+interface Showcase {
+  starred: string[];
+  notes: Array<[string, string]>;
 }
 
-// ── trace definitions ─────────────────────────────────────────────────────────
-// Size tiers (input / output tokens, durationMs):
-//   XS  :  15-40   /   25-80    /  80-250ms
-//   S   :  40-120  /   80-200   /  250-700ms
-//   M   : 120-350  /  200-500   /  700-1800ms
-//   L   : 350-900  /  500-1200  / 1800-4500ms
-//   XL  : 900-3000 / 1200-4000  / 4500-12000ms
-
-async function seedAllTraces(api: DemoApiCall): Promise<{ starred: string[]; noted: Array<[string, string]> }> {
+async function seedShowcase(ctx: DemoSeedContext): Promise<Showcase> {
   const starred: string[] = [];
-  const noted: Array<[string, string]> = [];
+  const notes: Array<[string, string]> = [];
 
-  // ══ XS — tiny, one-shot ══════════════════════════════════════════════════════
+  // 1. Support agent with a full tool loop and a cached system prompt ─────────
+  {
+    const chargeDate = isoDate(ago(9 * DAY));
+    const t1 = toolId(), t2 = toolId(), t3 = toolId();
+    const id = await ingestAnthropic(ctx, {
+      request: {
+        model: "claude-sonnet-4-6",
+        max_tokens: 1024,
+        temperature: 0.3,
+        system: [{ type: "text", text: SUPPORT_SYSTEM, cache_control: { type: "ephemeral" } }],
+        tools: SUPPORT_TOOLS,
+        messages: [
+          { role: "user", content: "Hi, I was charged twice for our Pro plan this month (order A-20931). Can you sort this out? It's maya.chen@northwind-retail.com" },
+          { role: "assistant", content: [
+            { type: "text", text: "Sorry about that, Maya - let me pull up your account first." },
+            { type: "tool_use", id: t1, name: "lookup_customer", input: { email: "maya.chen@northwind-retail.com" } },
+          ] },
+          { role: "user", content: [
+            { type: "tool_result", tool_use_id: t1, content: JSON.stringify({ customer_id: "cus_R8fK2mQx", name: "Maya Chen", company: "Northwind Retail", plan: "pro_monthly", seats: 12, status: "active", since: "2024-03-14" }) },
+          ] },
+          { role: "assistant", content: [
+            { type: "tool_use", id: t2, name: "list_charges", input: { customer_id: "cus_R8fK2mQx", since: isoDate(ago(30 * DAY)) } },
+          ] },
+          { role: "user", content: [
+            { type: "tool_result", tool_use_id: t2, content: JSON.stringify([
+              { charge_id: "ch_3QxT81Lk", amount_cents: 58800, currency: "usd", created: `${chargeDate}T08:14:02Z`, description: "Pro plan - 12 seats", status: "succeeded" },
+              { charge_id: "ch_3QxT7zPa", amount_cents: 58800, currency: "usd", created: `${chargeDate}T08:13:57Z`, description: "Pro plan - 12 seats", status: "succeeded" },
+            ]) },
+          ] },
+          { role: "assistant", content: [
+            { type: "text", text: "Confirmed: two identical charges of $588.00, five seconds apart. That's above my $500 limit for a normal refund, but our policy lets me refund duplicates immediately, so I'm refunding the second one now." },
+            { type: "tool_use", id: t3, name: "issue_refund", input: { charge_id: "ch_3QxT81Lk", amount_cents: 58800, reason: "duplicate" } },
+          ] },
+          { role: "user", content: [
+            { type: "tool_result", tool_use_id: t3, content: JSON.stringify({ refund_id: "re_9LmN4tYw", status: "succeeded", amount_cents: 58800, expected_arrival: "5-10 business days" }) },
+          ] },
+        ],
+      },
+      response: {
+        id: anthropicId(), type: "message", role: "assistant", model: "claude-sonnet-4-6",
+        stop_reason: "end_turn", stop_sequence: null,
+        content: [{ type: "text", text: "All sorted, Maya. Here's what happened and what I did:\n\n**What went wrong:** your card was charged $588.00 twice for the Pro plan (12 seats), five seconds apart. That's a duplicate on our side - most likely a retried payment request.\n\n**What I did:** refunded the duplicate charge (`ch_3QxT81Lk`) in full. Refund reference: **re_9LmN4tYw**.\n\n**When you'll see it:** usually 5-10 business days, depending on your bank. Your Pro subscription is untouched - all 12 seats stay active.\n\nIf the refund hasn't shown up after 10 business days, reply to this thread with the reference above and I'll chase it with our payment provider. Anything else I can help with?" }],
+        usage: { input_tokens: 1846, output_tokens: 214, cache_read_input_tokens: 1310, cache_creation_input_tokens: 0 },
+      },
+      timestamp: ago(2 * HOUR + 14 * MIN),
+      durationMs: 3920,
+    });
+    starred.push(id);
+    notes.push([id, "Golden path for the duplicate-charge flow: verify → confirm → refund → explain. Note the agent correctly applied the duplicate exception to the $500 refund limit. Use this as an eval fixture."]);
+  }
 
-  // XS-1. Translate a phrase — haiku, <150ms, 2d ago
-  await seedAnthropic(api, {
-    request: {
-      model: "claude-haiku-4-5",
-      messages: [{ role: "user", content: "Translate 'The deployment is complete.' into Polish, German, and French." }],
-      max_tokens: 128,
-    },
-    response: {
-      id: `msg_${uid()}`, type: "message", role: "assistant",
-      content: [{ type: "text", text: "**Polish:** Wdrożenie zostało zakończone.\n**German:** Die Bereitstellung ist abgeschlossen.\n**French:** Le déploiement est terminé." }],
-      model: "claude-haiku-4-5", stop_reason: "end_turn", stop_sequence: null,
-      usage: { input_tokens: 22, output_tokens: 48 },
-    },
-    timestamp: daysAgo(2), durationMs: 142,
+  // 2. Coding agent: failing test (tool error), fix, green run ─────────────────
+  {
+    const r = toolId(), t1 = toolId(), w = toolId(), t2 = toolId();
+    const original = `export async function getInvoice(req: Request, res: Response) {
+  const invoice = await db.invoices.findById(req.params.id);
+  if (!invoice) return res.status(404).json({ error: "Not found" });
+
+  const customer = await db.customers.findById(invoice.customerId);
+  const taxRate = TAX_RATES[customer.billingAddress.country] ?? 0;
+
+  return res.json({
+    ...invoice,
+    tax: Math.round(invoice.subtotal * taxRate),
+    total: Math.round(invoice.subtotal * (1 + taxRate)),
   });
+}`;
+    const fixed = `export async function getInvoice(req: Request, res: Response) {
+  const invoice = await db.invoices.findById(req.params.id);
+  if (!invoice) return res.status(404).json({ error: "Not found" });
 
-  // XS-2. One-liner CSS centering — gpt-4o-mini, very fast, 3d ago
-  await seedOpenAI(api, {
-    request: {
-      model: "gpt-4o-mini",
-      messages: [{ role: "user", content: "How do I center a div both horizontally and vertically using CSS Grid in one line?" }],
-      max_tokens: 128,
-    },
-    response: {
-      id: `chatcmpl_${uid()}`, object: "chat.completion",
-      created: Math.floor(Date.now() / 1000), model: "gpt-4o-mini",
-      choices: [{ index: 0, message: { role: "assistant", content: "```css\n.container {\n  display: grid;\n  place-items: center;\n}\n```\n`place-items: center` is shorthand for `align-items + justify-items`. Give the container a defined height." }, finish_reason: "stop" }],
-      usage: { prompt_tokens: 20, completion_tokens: 44, total_tokens: 64 },
-    },
-    timestamp: daysAgo(3), durationMs: 178,
+  const customer = await db.customers.findById(invoice.customerId);
+  // Customers created through the API may not have a billing address yet.
+  const country = customer?.billingAddress?.country;
+  const taxRate = country ? (TAX_RATES[country] ?? 0) : 0;
+
+  return res.json({
+    ...invoice,
+    tax: Math.round(invoice.subtotal * taxRate),
+    total: Math.round(invoice.subtotal * (1 + taxRate)),
+    taxEstimated: !country,
   });
+}`;
+    const id = await ingestAnthropic(ctx, {
+      request: {
+        model: "claude-opus-4-8",
+        max_tokens: 4096,
+        system: [{ type: "text", text: "You are a senior engineer working in the billing-service repository (TypeScript, Express, Vitest). Make the smallest change that fixes the problem, run the relevant tests before and after, and finish with a short summary of the root cause and the fix.", cache_control: { type: "ephemeral" } }],
+        tools: [
+          { name: "read_file", description: "Read a file from the repository.", input_schema: { type: "object", properties: { path: { type: "string" } }, required: ["path"] } },
+          { name: "write_file", description: "Overwrite a file in the repository.", input_schema: { type: "object", properties: { path: { type: "string" }, content: { type: "string" } }, required: ["path", "content"] } },
+          { name: "run_tests", description: "Run Vitest, optionally filtered by a name pattern.", input_schema: { type: "object", properties: { pattern: { type: "string" } } } },
+        ],
+        messages: [
+          { role: "user", content: "GET /invoices/:id returns a 500 for customers that don't have a billing address yet (Sentry BILLING-3F2). Fix it and make sure the invoice tests pass." },
+          { role: "assistant", content: [
+            { type: "text", text: "I'll start by reading the route handler." },
+            { type: "tool_use", id: r, name: "read_file", input: { path: "src/routes/invoices.ts" } },
+          ] },
+          { role: "user", content: [{ type: "tool_result", tool_use_id: r, content: original }] },
+          { role: "assistant", content: [
+            { type: "text", text: "`customer.billingAddress.country` will throw when `billingAddress` is null. Let me reproduce it with the existing tests first." },
+            { type: "tool_use", id: t1, name: "run_tests", input: { pattern: "invoices" } },
+          ] },
+          { role: "user", content: [{ type: "tool_result", tool_use_id: t1, is_error: true, content: " FAIL  src/routes/invoices.test.ts > GET /invoices/:id > returns an invoice for a customer without billing address\nTypeError: Cannot read properties of null (reading 'country')\n ❯ getInvoice src/routes/invoices.ts:6:52\n\n Test Files  1 failed (1)\n      Tests  1 failed | 11 passed (12)\n   Duration  1.84s" }] },
+          { role: "assistant", content: [
+            { type: "text", text: "Reproduced. I'll guard the lookup, fall back to a zero tax rate, and flag the response so the UI can show the tax as an estimate." },
+            { type: "tool_use", id: w, name: "write_file", input: { path: "src/routes/invoices.ts", content: fixed } },
+          ] },
+          { role: "user", content: [{ type: "tool_result", tool_use_id: w, content: "Wrote 612 bytes to src/routes/invoices.ts" }] },
+          { role: "assistant", content: [{ type: "tool_use", id: t2, name: "run_tests", input: { pattern: "invoices" } }] },
+          { role: "user", content: [{ type: "tool_result", tool_use_id: t2, content: " ✓ src/routes/invoices.test.ts (12 tests) 412ms\n\n Test Files  1 passed (1)\n      Tests  12 passed (12)\n   Duration  1.61s" }] },
+        ],
+      },
+      response: {
+        id: anthropicId(), type: "message", role: "assistant", model: "claude-opus-4-8",
+        stop_reason: "end_turn", stop_sequence: null,
+        content: [{ type: "text", text: "Fixed - all 12 invoice tests pass.\n\n**Root cause:** customers created through the public API can exist without a billing address. `getInvoice` read `customer.billingAddress.country` unconditionally, so those invoices threw a `TypeError` and the route returned 500.\n\n**Fix** (`src/routes/invoices.ts`):\n- read the country with optional chaining and fall back to a 0% tax rate when it's missing;\n- add `taxEstimated: true` to the response in that case, so the dashboard can label the tax as an estimate instead of silently showing $0.\n\n**Worth a follow-up:** the invoice should probably not be finalised at all without a billing address - tax is legally required in several of our markets. I'd suggest blocking `POST /invoices/:id/finalize` until the address is set; happy to do that in a separate change." }],
+        usage: { input_tokens: 2984, output_tokens: 1062, cache_read_input_tokens: 2240, cache_creation_input_tokens: 0 },
+      },
+      timestamp: ago(1 * DAY + 3 * HOUR),
+      durationMs: 18740,
+    });
+    starred.push(id);
+    notes.push([id, "Nice example of the agent using the failing test as a reproduction before editing. Follow-up suggested at the end (block finalize without address) → created BILL-412."]);
+  }
 
-  // XS-3. TL;DR — gpt-4o-mini, instant, 7d ago
-  await seedOpenAI(api, {
-    request: {
-      model: "gpt-4o-mini",
-      messages: [{ role: "user", content: "TL;DR in one sentence: The transformer architecture introduced self-attention mechanisms that allow models to weigh the relevance of different input tokens when generating each output token, enabling parallelization that RNNs couldn't achieve." }],
-      max_tokens: 64,
-    },
-    response: {
-      id: `chatcmpl_${uid()}`, object: "chat.completion",
-      created: Math.floor(Date.now() / 1000), model: "gpt-4o-mini",
-      choices: [{ index: 0, message: { role: "assistant", content: "Transformers use self-attention to dynamically focus on relevant input tokens in parallel, solving the sequential bottleneck that limited earlier RNN architectures." }, finish_reason: "stop" }],
-      usage: { prompt_tokens: 58, completion_tokens: 28, total_tokens: 86 },
-    },
-    timestamp: daysAgo(7), durationMs: 112,
-  });
+  // 3. RAG over a cached handbook - most input tokens come from the cache ──────
+  {
+    const id = await ingestAnthropic(ctx, {
+      request: {
+        model: "claude-haiku-4-5",
+        max_tokens: 600,
+        temperature: 0,
+        system: [{ type: "text", text: HANDBOOK_SYSTEM, cache_control: { type: "ephemeral" } }],
+        messages: [{ role: "user", content: "I'm planning to spend February and March in Lisbon with my partner and keep working from there. Is that allowed, and do I still get the home-office stipend while I'm abroad?" }],
+      },
+      response: {
+        id: anthropicId(), type: "message", role: "assistant", model: "claude-haiku-4-5",
+        stop_reason: "end_turn", stop_sequence: null,
+        content: [{ type: "text", text: "Yes to both:\n\n- **Working from Lisbon:** allowed. You can work remotely from any non-restricted country for up to 90 days per calendar year [1], and Portugal isn't on the restricted list [2]. February and March together are 59 days (60 in a leap year), so you're within the limit. Let your manager and People Ops know at least 14 days before you leave, and keep the core hours of 13:00-16:00 CET [1] - Lisbon is one hour behind, so that's 12:00-15:00 local time.\n- **Home-office stipend:** it keeps being paid during temporary stays abroad - EUR 75 a month with your salary [3].\n\nIf the trip might run past 90 days, tell People Ops early: longer stays need a tax and immigration review [1]." }],
+        usage: { input_tokens: 64, output_tokens: 231, cache_read_input_tokens: 1138, cache_creation_input_tokens: 0 },
+      },
+      timestamp: ago(38 * MIN),
+      durationMs: 1180,
+    });
+    notes.push([id, "Prompt caching at work: the handbook is cached, so almost all input tokens are cache reads. Cost per question is a fraction of an uncached call."]);
+  }
 
-  // XS-4. Regex one-liner — haiku, 6d ago
-  await seedAnthropic(api, {
-    request: {
-      model: "claude-haiku-4-5",
-      messages: [{ role: "user", content: "Regex to validate email with subdomains and plus addressing?" }],
-      max_tokens: 128,
-    },
-    response: {
-      id: `msg_${uid()}`, type: "message", role: "assistant",
-      content: [{ type: "text", text: "```\n/^[a-zA-Z0-9._%+\\-]+@[a-zA-Z0-9.\\-]+\\.[a-zA-Z]{2,}$/\n```\nCovers `user+tag@mail.company.co.uk`. For production prefer `zod`'s `z.string().email()` — full RFC 5322 is too complex to regex reliably." }],
-      model: "claude-haiku-4-5", stop_reason: "end_turn", stop_sequence: null,
-      usage: { input_tokens: 19, output_tokens: 72 },
-    },
-    timestamp: daysAgo(6), durationMs: 198,
-  });
-
-  // ══ S — short, focused ═══════════════════════════════════════════════════════
-
-  // S-1. Async/await explanation — haiku, 14h ago
-  const s1 = await seedAnthropic(api, {
-    request: {
-      model: "claude-haiku-4-5",
-      messages: [{ role: "user", content: "Explain async/await in JavaScript with a concise practical example." }],
-      max_tokens: 512,
-    },
-    response: {
-      id: `msg_${uid()}`, type: "message", role: "assistant",
-      content: [{ type: "text", text: "Async/await is syntactic sugar over Promises that makes asynchronous code read like synchronous code.\n\n```javascript\n// Without async/await\nfetch('/api/user')\n  .then(r => r.json())\n  .then(user => console.log(user))\n  .catch(err => console.error(err));\n\n// With async/await\nasync function loadUser() {\n  try {\n    const response = await fetch('/api/user');\n    const user = await response.json();\n    console.log(user);\n  } catch (err) {\n    console.error(err);\n  }\n}\n```\n\n`await` pauses execution inside the `async` function until the Promise resolves, without blocking the main thread." }],
-      model: "claude-haiku-4-5", stop_reason: "end_turn", stop_sequence: null,
-      usage: { input_tokens: 18, output_tokens: 154 },
-    },
-    timestamp: hoursAgo(14), durationMs: 284,
-  });
-  starred.push(s1);
-
-  // S-2. SQL top-10 query — sonnet, 4d ago
-  const s2 = await seedAnthropic(api, {
-    request: {
-      model: "claude-sonnet-4-6",
-      messages: [{ role: "user", content: "Write a SQL query to find the top 10 customers by total order value in the last 90 days, including their email and order count." }],
-      max_tokens: 512,
-    },
-    response: {
-      id: `msg_${uid()}`, type: "message", role: "assistant",
-      content: [{ type: "text", text: "```sql\nSELECT\n  c.email,\n  COUNT(o.id)          AS order_count,\n  SUM(o.total_amount)  AS total_value\nFROM customers c\nJOIN orders o ON o.customer_id = c.id\nWHERE o.created_at >= NOW() - INTERVAL '90 days'\n  AND o.status = 'completed'\nGROUP BY c.id, c.email\nORDER BY total_value DESC\nLIMIT 10;\n```\n\nFiltering by `status = 'completed'` prevents refunded/cancelled orders from inflating totals. If you need all statuses, remove that clause." }],
-      model: "claude-sonnet-4-6", stop_reason: "end_turn", stop_sequence: null,
-      usage: { input_tokens: 44, output_tokens: 128 },
-    },
-    timestamp: daysAgo(4), durationMs: 468,
-  });
-  starred.push(s2);
-
-  // S-3. TypeScript type vs interface — haiku with system prompt, 5d ago
-  await seedAnthropic(api, {
-    request: {
-      model: "claude-haiku-4-5",
-      system: "You are a senior TypeScript developer. Give precise, opinionated answers. No preamble.",
-      messages: [{ role: "user", content: "Practical difference between `type` and `interface` in TypeScript? When to use each?" }],
-      max_tokens: 512,
-    },
-    response: {
-      id: `msg_${uid()}`, type: "message", role: "assistant",
-      content: [{ type: "text", text: "Use **`interface`** for object shapes you expect others to extend or implement — it supports declaration merging and is better for OOP patterns.\n\nUse **`type`** for everything else: unions, intersections, mapped types, conditional types, tuples.\n\n```typescript\n// Interface — extensible object shapes\ninterface User { id: string; email: string; }\ninterface AdminUser extends User { permissions: string[]; }\n\n// Type — unions and computed types\ntype Status = 'idle' | 'loading' | 'error';\ntype Nullable<T> = T | null;\ntype Keys = keyof User; // 'id' | 'email'\n```\n\nDefault to `type`, switch to `interface` only when you need declaration merging." }],
-      model: "claude-haiku-4-5", stop_reason: "end_turn", stop_sequence: null,
-      usage: { input_tokens: 52, output_tokens: 168 },
-    },
-    timestamp: daysAgo(5), durationMs: 388,
-  });
-
-  // S-4. Email cold outreach — gpt-4o-mini, 2d ago
-  await seedOpenAI(api, {
-    request: {
-      model: "gpt-4o-mini",
-      messages: [{ role: "user", content: "Write a short cold outreach email for a B2B SaaS analytics product targeting CTOs of Series A startups. Keep it under 100 words." }],
-      max_tokens: 256,
-    },
-    response: {
-      id: `chatcmpl_${uid()}`, object: "chat.completion",
-      created: Math.floor(Date.now() / 1000), model: "gpt-4o-mini",
-      choices: [{ index: 0, message: { role: "assistant", content: "Subject: Cut your p95 LLM latency — without guessing\n\nHi [Name],\n\nAs you scale your AI features, production blind spots get expensive fast — slow prompts, runaway costs, regressions that slip past evals.\n\nWe built LLM Lens to give CTOs a real-time view of every model call: latency, token spend, error rates, and diffs across prompt versions.\n\n5-minute integration, no infrastructure required.\n\nWould a 20-minute demo be worth your time next week?\n\nBest,\n[Sender]" }, finish_reason: "stop" }],
-      usage: { prompt_tokens: 40, completion_tokens: 98, total_tokens: 138 },
-    },
-    timestamp: daysAgo(2), durationMs: 322,
-  });
-
-  // S-5. Blog post outline — gpt-4o-mini, 8d ago
-  await seedOpenAI(api, {
-    request: {
-      model: "gpt-4o-mini",
-      messages: [{ role: "user", content: "Create a blog post outline for 'How to monitor LLM costs in production'. Target audience: backend engineers. 5 sections max." }],
-      max_tokens: 512,
-    },
-    response: {
-      id: `chatcmpl_${uid()}`, object: "chat.completion",
-      created: Math.floor(Date.now() / 1000), model: "gpt-4o-mini",
-      choices: [{ index: 0, message: { role: "assistant", content: "**How to Monitor LLM Costs in Production**\n\n**1. Why LLM costs spiral unexpectedly**\n- Token pricing models (input vs output asymmetry)\n- The hidden cost of retries and streaming\n- Real example: $4k/month surprise bill\n\n**2. Instrument every call**\n- Wrapping the SDK vs middleware approach\n- What to capture: model, tokens, latency, user_id, feature_flag\n- Structured logging vs trace storage\n\n**3. Build cost attribution**\n- Tagging by team, feature, and environment\n- Cost per user / cost per API call\n- Anomaly detection thresholds\n\n**4. Alerting that doesn't cry wolf**\n- Budget alerts vs spend-rate alerts\n- Per-model vs aggregate ceilings\n- Runbook: what to do when you hit 80% of budget\n\n**5. Optimizing after you can measure**\n- Cache hit rate as a leading indicator\n- Model downgrades: when haiku is good enough\n- Prompt compression ROI" }, finish_reason: "stop" }],
-      usage: { prompt_tokens: 40, completion_tokens: 212, total_tokens: 252 },
-    },
-    timestamp: daysAgo(8), durationMs: 512,
-  });
-
-  // ══ M — medium, typical workload ═════════════════════════════════════════════
-
-  // M-1. TypeScript debounce — sonnet, 2d ago
-  const m1 = await seedAnthropic(api, {
-    request: {
-      model: "claude-sonnet-4-6",
-      messages: [{ role: "user", content: "Write a TypeScript utility function that debounces function calls. Include proper generic types, cancellation support, a flush method, and a usage example." }],
-      max_tokens: 1024,
-    },
-    response: {
-      id: `msg_${uid()}`, type: "message", role: "assistant",
-      content: [{ type: "text", text: "Here's a fully-typed debounce with cancellation and flush:\n\n```typescript\ninterface DebouncedFn<T extends (...args: unknown[]) => void> {\n  (...args: Parameters<T>): void;\n  cancel(): void;\n  flush(...args: Parameters<T>): void;\n}\n\nfunction debounce<T extends (...args: unknown[]) => void>(\n  fn: T,\n  delay: number,\n): DebouncedFn<T> {\n  let timer: ReturnType<typeof setTimeout> | null = null;\n\n  const debounced = (...args: Parameters<T>) => {\n    if (timer !== null) clearTimeout(timer);\n    timer = setTimeout(() => {\n      fn(...args);\n      timer = null;\n    }, delay);\n  };\n\n  debounced.cancel = () => {\n    if (timer !== null) { clearTimeout(timer); timer = null; }\n  };\n\n  debounced.flush = (...args: Parameters<T>) => {\n    debounced.cancel();\n    fn(...args);\n  };\n\n  return debounced;\n}\n\n// Usage\nconst handleSearch = debounce((query: string) => {\n  console.log('Searching for:', query);\n}, 300);\n\nhandleSearch('hell');   // cancelled\nhandleSearch('hello');  // fires after 300ms\nhandleSearch.flush('hello world'); // fires immediately\nhandleSearch.cancel(); // prevents any pending call\n```\n\nThe `DebouncedFn` interface lets callers see `.cancel()` and `.flush()` without casting. `flush` is useful in form submit handlers where you want the latest value immediately." }],
-      model: "claude-sonnet-4-6", stop_reason: "end_turn", stop_sequence: null,
-      usage: { input_tokens: 38, output_tokens: 298 },
-    },
-    timestamp: daysAgo(2), durationMs: 882,
-  });
-  starred.push(m1);
-
-  // M-2. Python sales script — sonnet, 2d ago
-  await seedAnthropic(api, {
-    request: {
-      model: "claude-sonnet-4-6",
-      messages: [{ role: "user", content: "Write a Python script that reads a CSV file of sales data (columns: date, product, quantity, price) and outputs a summary: total revenue per product, sorted descending, with a grand total." }],
-      max_tokens: 1024,
-    },
-    response: {
-      id: `msg_${uid()}`, type: "message", role: "assistant",
-      content: [{ type: "text", text: "```python\nimport csv\nfrom collections import defaultdict\nfrom pathlib import Path\n\ndef summarize_sales(filepath: str) -> dict[str, float]:\n    revenue: dict[str, float] = defaultdict(float)\n    with Path(filepath).open() as f:\n        reader = csv.DictReader(f)\n        for row in reader:\n            total = float(row['quantity']) * float(row['price'])\n            revenue[row['product']] += total\n    return dict(sorted(revenue.items(), key=lambda x: x[1], reverse=True))\n\nif __name__ == '__main__':\n    results = summarize_sales('sales.csv')\n    print(f\"{'Product':<30} {'Revenue':>12}\")\n    print('-' * 44)\n    grand = 0.0\n    for product, total in results.items():\n        print(f\"{product:<30} ${total:>11,.2f}\")\n        grand += total\n    print('-' * 44)\n    print(f\"{'TOTAL':<30} ${grand:>11,.2f}\")\n```\n\n`csv.DictReader` reads by header name so column order doesn't matter. The `defaultdict(float)` starts every product at 0, avoiding an explicit existence check. Type annotation `dict[str, float]` requires Python 3.9+." }],
-      model: "claude-sonnet-4-6", stop_reason: "end_turn", stop_sequence: null,
-      usage: { input_tokens: 60, output_tokens: 248 },
-    },
-    timestamp: daysAgo(2), durationMs: 754,
-  });
-
-  // M-3. Tool use — weather — sonnet, warn latency, 1d ago
-  const m3 = await seedAnthropic(api, {
-    request: {
-      model: "claude-sonnet-4-6",
-      messages: [{ role: "user", content: "What's the current weather in Warsaw and Krakow? I need to decide which city to visit this weekend." }],
-      max_tokens: 1024,
-      tools: [{
-        name: "get_weather",
-        description: "Get current weather for a location",
-        input_schema: {
-          type: "object",
-          properties: {
-            location: { type: "string", description: "City name" },
-            units: { type: "string", enum: ["celsius", "fahrenheit"] },
+  // 4. Vision + forced tool call: receipt → structured expense ─────────────────
+  {
+    const id = await ingestAnthropic(ctx, {
+      request: {
+        model: "claude-sonnet-4-6",
+        max_tokens: 1024,
+        temperature: 0,
+        system: "You turn photos of receipts into expense records. Copy amounts exactly as printed; never guess missing values - use null instead.",
+        tools: [{
+          name: "record_expense",
+          description: "Store an expense extracted from a receipt.",
+          input_schema: {
+            type: "object",
+            properties: {
+              merchant: { type: "string" }, address: { type: "string" }, date: { type: "string", format: "date" },
+              time: { type: "string" }, receipt_number: { type: "string" }, currency: { type: "string" },
+              items: { type: "array", items: { type: "object", properties: { description: { type: "string" }, quantity: { type: "number" }, amount: { type: "number" } } } },
+              total: { type: "number" }, vat: { type: "number" }, payment_method: { type: "string" },
+            },
+            required: ["merchant", "date", "currency", "items", "total"],
           },
-          required: ["location"],
+        }],
+        tool_choice: { type: "tool", name: "record_expense" },
+        messages: [{ role: "user", content: [
+          { type: "image", source: { type: "url", media_type: "image/jpeg", url: "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b3/Sahan_Supermarket_receipt%2C_Hillegersberg%2C_Rotterdam_%282021%29_02.jpg/960px-Sahan_Supermarket_receipt%2C_Hillegersberg%2C_Rotterdam_%282021%29_02.jpg" } },
+          { type: "text", text: "Add this to my expense report for the Rotterdam offsite (snacks for the workshop)." },
+        ] }],
+      },
+      response: {
+        id: anthropicId(), type: "message", role: "assistant", model: "claude-sonnet-4-6",
+        stop_reason: "tool_use", stop_sequence: null,
+        content: [{ type: "tool_use", id: toolId(), name: "record_expense", input: {
+          merchant: "SAHAN Supermarkt",
+          address: "Bergweg 170, 3036 BL Rotterdam",
+          date: "2021-01-26",
+          time: "11:29",
+          receipt_number: "2-00005155",
+          currency: "EUR",
+          items: [
+            { description: "Miras olive oil (glass) 1L", quantity: 1, amount: 3.99 },
+            { description: "Meray Trakya pumpkin seeds 200g", quantity: 1, amount: 1.99 },
+            { description: "Pinar pumpkin seeds 200g", quantity: 1, amount: 1.99 },
+            { description: "Ülker Petibör biscuits 1kg", quantity: 1, amount: 2.49 },
+            { description: "Simit bread (5 × 0.75)", quantity: 5, amount: 3.75 },
+          ],
+          total: 14.21,
+          vat: 1.17,
+          payment_method: "PIN (debit card)",
+        } }],
+        usage: { input_tokens: 1702, output_tokens: 341 },
+      },
+      timestamp: ago(5 * HOUR + 22 * MIN),
+      durationMs: 4310,
+    });
+    starred.push(id);
+  }
+
+  // 5. OpenAI: parallel function calls, then the final answer ─────────────────
+  {
+    const w = callId(), f = callId();
+    const id = await ingestOpenAI(ctx, {
+      request: {
+        model: "gpt-4o",
+        temperature: 0.4,
+        max_tokens: 800,
+        tools: [
+          { type: "function", function: { name: "get_weather", description: "Daily forecast for a city.", parameters: { type: "object", properties: { city: { type: "string" }, days: { type: "integer", minimum: 1, maximum: 7 } }, required: ["city"] } } },
+          { type: "function", function: { name: "search_flights", description: "Search flights between two airports.", parameters: { type: "object", properties: { from: { type: "string" }, to: { type: "string" }, date: { type: "string" }, depart_after: { type: "string" }, direct_only: { type: "boolean" } }, required: ["from", "to", "date"] } } },
+        ],
+        messages: [
+          { role: "system", content: "You are a travel assistant for business travellers. Be brief and practical. Prices in EUR." },
+          { role: "user", content: "I'm at a conference in Kraków on Thursday and Friday. What's the weather going to be like, and can you find me a direct flight back to Amsterdam on Friday evening?" },
+          { role: "assistant", content: null, tool_calls: [
+            { id: w, type: "function", function: { name: "get_weather", arguments: JSON.stringify({ city: "Kraków", days: 2 }) } },
+            { id: f, type: "function", function: { name: "search_flights", arguments: JSON.stringify({ from: "KRK", to: "AMS", date: "friday", depart_after: "17:00", direct_only: true }) } },
+          ] },
+          { role: "tool", tool_call_id: w, content: JSON.stringify([{ day: "Thursday", high_c: 9, low_c: 2, summary: "cloudy, light rain after 15:00" }, { day: "Friday", high_c: 11, low_c: 3, summary: "sunny intervals, windy" }]) },
+          { role: "tool", tool_call_id: f, content: JSON.stringify([{ flight: "KL1998", depart: "18:05", arrive: "20:20", price_eur: 164, seats_left: 4 }, { flight: "LO269", depart: "20:40", arrive: "22:55", price_eur: 121, seats_left: 9 }]) },
+        ],
+      },
+      response: {
+        id: openaiId(), object: "chat.completion", created: Math.floor(ago(3 * HOUR) / 1000), model: "gpt-4o",
+        choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: "**Weather in Kraków**\n- Thursday: 2-9 °C, cloudy, light rain from mid-afternoon - bring an umbrella for the evening.\n- Friday: 3-11 °C, sunny intervals but windy.\n\n**Direct flights KRK → AMS on Friday evening**\n| Flight | Departs | Arrives | Price |\n|---|---|---|---|\n| KL1998 | 18:05 | 20:20 | €164 (4 seats left) |\n| LO269 | 20:40 | 22:55 | €121 |\n\nIf the conference wraps up by 16:30, KL1998 is doable (the airport is ~30 min from the centre). LO269 is cheaper and gives you more buffer. Want me to hold a seat on either?" } }],
+        usage: { prompt_tokens: 486, completion_tokens: 172, total_tokens: 658, prompt_tokens_details: { cached_tokens: 0 } },
+      },
+      timestamp: ago(3 * HOUR + 5 * MIN),
+      durationMs: 2870,
+    });
+    starred.push(id);
+  }
+
+  // 6. o3-mini: reasoning model - most of the output is hidden reasoning ──────
+  await ingestOpenAI(ctx, {
+    request: {
+      model: "o3-mini",
+      max_tokens: 8000,
+      messages: [{ role: "user", content: "Our job queue retries failed jobs with `delay = base * 2^attempt` (base = 2s, max 8 attempts) and all workers restarted at the same moment after an outage, so ~40k jobs retried in lockstep and hammered the database again. What's the minimal change to the retry formula that prevents this, and roughly how long is the worst-case total wait after the change?" }],
+    },
+    response: {
+      id: openaiId(), object: "chat.completion", created: Math.floor(ago(9 * HOUR) / 1000), model: "o3-mini",
+      choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: "**Minimal change: add jitter.** Use \"full jitter\" instead of a fixed delay:\n\n```ts\nconst cap = base * 2 ** attempt;          // same exponential envelope as today\nconst delay = Math.random() * cap;          // full jitter: uniform in [0, cap)\n```\n\nThe exponential envelope is fine; the problem is that every job waiting on attempt *n* wakes up at exactly the same moment. Full jitter spreads each wave uniformly across the whole window, so 40k jobs on attempt 5 (cap 64 s) arrive at ~625 jobs/s instead of all at once.\n\n**Worst-case total wait** (attempts 0-7, base 2 s):\n- today: 2 + 4 + ... + 256 = **510 s** (8.5 min), every time;\n- with full jitter: the same **510 s** upper bound, but the *expected* total is half of that, **~255 s**.\n\nTwo cheap additions worth considering: cap a single delay (e.g. 5 min) so later attempts don't grow unbounded if you raise the attempt limit, and add jitter to worker *startup* too - the restart itself was the synchronising event." } }],
+      usage: { prompt_tokens: 118, completion_tokens: 2614, total_tokens: 2732, completion_tokens_details: { reasoning_tokens: 2240 } },
+    },
+    timestamp: ago(9 * HOUR + 40 * MIN),
+    durationMs: 14260,
+  });
+
+  // 7. GPT-4o vision: read a chart for a report ────────────────────────────────
+  await ingestOpenAI(ctx, {
+    request: {
+      model: "gpt-4o",
+      max_tokens: 700,
+      messages: [
+        { role: "system", content: "You help analysts write reports. Read charts precisely and point out anything a reviewer might question." },
+        { role: "user", content: [
+          { type: "text", text: "Summarise this chart in 3-4 sentences for a policy brief, and flag anything odd." },
+          { type: "image_url", image_url: { url: "https://upload.wikimedia.org/wikipedia/commons/thumb/b/ba/Line_Graph_GDP_and_Year.png/960px-Line_Graph_GDP_and_Year.png", detail: "high" } },
+        ] },
+      ],
+    },
+    response: {
+      id: openaiId(), object: "chat.completion", created: Math.floor(ago(2 * DAY) / 1000), model: "gpt-4o",
+      choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: "**Summary:** India's public spending on education stayed between roughly 3.1% and 3.9% of GDP from 2003 to 2021. It fell from about 3.6% in 2003 to 3.1% in 2006, recovered to 3.3% in 2009 and peaked at about 3.9% in 2012, then declined steadily to about 3.1% by 2021 - back to its 2006 low.\n\n**Things a reviewer might question:**\n1. **Truncated y-axis** - it starts at 3%, which makes a 0.8-point swing look dramatic. Say so in the caption or start the axis at 0.\n2. **Sparse data** - points are only every three years, so the 2012 \"peak\" may be a single high year rather than a trend.\n3. **No source or definition** - it isn't clear whether this is central government only or central + state spending, which changes the numbers considerably for India." } }],
+      usage: { prompt_tokens: 1158, completion_tokens: 206, total_tokens: 1364 },
+    },
+    timestamp: ago(2 * DAY + 4 * HOUR),
+    durationMs: 4120,
+  });
+
+  // 8. Vercel AI SDK: streamText chat with a tool round-trip ────────────────────
+  {
+    const s = `call_${rid(20)}`;
+    await ingestVercel(ctx, {
+      type: "ai.streamText",
+      operationId: vercelId(),
+      model: "gpt-4o-mini",
+      provider: "openai.chat",
+      timestamp: ago(52 * MIN),
+      durationMs: 2340,
+      input: {
+        system: "You are the shopping assistant for Stride, an online running store. Recommend at most 3 products, always with price and why it fits.",
+        temperature: 0.6,
+        messages: [
+          { role: "user", content: "I'm training for my first half marathon. Mostly road, about 30 km a week, and my knees get sore on long runs. Budget around €150." },
+          { role: "assistant", content: [{ type: "tool-call", toolCallId: s, toolName: "searchProducts", args: { category: "road-running-shoes", cushioning: "max", maxPrice: 160, sort: "rating" } }] },
+          { role: "tool", content: [{ type: "tool-result", toolCallId: s, toolName: "searchProducts", result: [
+            { sku: "ST-NB-1080", name: "New Balance Fresh Foam X 1080v14", price: 159.95, rating: 4.7, drop_mm: 6 },
+            { sku: "ST-AS-NIM", name: "ASICS Gel-Nimbus 27", price: 149.95, rating: 4.6, drop_mm: 8 },
+            { sku: "ST-HK-CL", name: "HOKA Clifton 10", price: 139.95, rating: 4.5, drop_mm: 8 },
+          ] }] },
+        ],
+      },
+      output: {
+        finishReason: "stop",
+        text: "For 30 km a week with sore knees, prioritise cushioning over speed. Three good fits:\n\n1. **ASICS Gel-Nimbus 27 - €149.95.** Very soft and stable, the safest all-rounder for longer runs. Right on budget.\n2. **HOKA Clifton 10 - €139.95.** Lighter and a bit livelier, still well cushioned. Good if you'll also do some faster sessions.\n3. **New Balance Fresh Foam X 1080v14 - €159.95.** The plushest of the three; worth the extra €10 if your knees are the main concern.\n\nTip: buy them at least 4 weeks before race day so you can do two or three long runs in them first.",
+      },
+      usage: { promptTokens: 612, completionTokens: 168, totalTokens: 780 },
+    });
+  }
+
+  // 9. Vercel AI SDK: generateObject classification ────────────────────────────
+  await ingestVercel(ctx, {
+    type: "ai.generateObject",
+    operationId: vercelId(),
+    model: "claude-haiku-4-5",
+    provider: "anthropic.messages",
+    timestamp: ago(6 * HOUR + 48 * MIN),
+    durationMs: 860,
+    input: {
+      system: "Classify incoming support tickets. Respond with the JSON object only.",
+      temperature: 0,
+      prompt: "Subject: Exports broken since this morning??\n\nHi, every CSV export from the Reports page fails with 'Something went wrong' since about 9am. We need the monthly numbers for a board meeting at 3pm today. Account: acme-logistics. - Jonas",
+    },
+    output: {
+      finishReason: "stop",
+      text: JSON.stringify({ category: "bug", product_area: "reports/export", sentiment: "frustrated", urgency: "high", deadline: "today 15:00", needs_human: true, summary: "CSV exports from Reports fail since ~09:00; customer needs data for a board meeting at 15:00." }, null, 2),
+    },
+    usage: { promptTokens: 214, completionTokens: 92, totalTokens: 306 },
+  });
+
+  // 10. Hit max_tokens: the answer is cut off mid-sentence ─────────────────────
+  await ingestVercel(ctx, {
+    type: "ai.generateText",
+    operationId: vercelId(),
+    model: "gpt-4o",
+    provider: "openai.chat",
+    timestamp: ago(1 * DAY + 11 * HOUR),
+    durationMs: 9480,
+    input: {
+      system: "You write the Northwind engineering blog. Clear, concrete, no hype.",
+      maxTokens: 600,
+      prompt: "Write a blog post (~1200 words) about how we cut our p95 API latency from 840 ms to 210 ms: connection pooling, N+1 query fixes, and moving PDF rendering to a queue.",
+    },
+    output: {
+      finishReason: "length",
+      text: "# How we cut p95 latency by 75% without rewriting anything\n\nThree months ago, our API's p95 latency was 840 ms. Customers didn't complain loudly, but our dashboards told a clear story: the slowest 5% of requests were getting slower every month, and they were concentrated in exactly the places customers care about - invoices, reports and exports.\n\nToday that number is 210 ms. We didn't rewrite a service or change languages. We fixed three boring things.\n\n## 1. Connection pooling: the 300 ms we were paying on every cold request\n\nOur Node services opened a fresh PostgreSQL connection for many requests. TLS handshake plus authentication cost us 40-60 ms on a good day and up to 300 ms under load, when the database was busy accepting new connections.\n\nWe moved to PgBouncer in transaction mode and capped each service at 20 pooled connections. Two things surprised us:\n\n- **Fewer connections made us faster.** Postgres spends real CPU on each connection; going from ~400 to 120 total connections reduced lock contention noticeably.\n- **Prepared statements needed care.** In transaction mode they don't survive between transactions, so we",
+    },
+    usage: { promptTokens: 96, completionTokens: 600, totalTokens: 696 },
+  });
+
+  // 11. Rate limited (429) ──────────────────────────────────────────────────────
+  {
+    const id = await insertErrorTrace(ctx, {
+      provider: "anthropic",
+      model: "claude-opus-4-8",
+      timestamp: ago(4 * HOUR + 31 * MIN),
+      durationMs: 412,
+      statusCode: 429,
+      error: "rate_limit_error: This request would exceed your organization's rate limit of 400,000 input tokens per minute (claude-opus-4-8). Please retry after 38 seconds.",
+      systemPrompt: "You are a contract analyst. Identify unusual clauses and risks.",
+      messages: [{ role: "user", content: "Review the attached master services agreement (84 pages) and list every clause that deviates from our standard terms, with a risk rating for each.\n\n[document: MSA_Globex_v7_final.pdf - 112,408 tokens]" }],
+    });
+    notes.push([id, "Burst of contract reviews from the batch job hit the Opus ITPM limit. Batch now goes through the queue with max 2 concurrent requests."]);
+  }
+
+  // 12. Context window exceeded (400) ───────────────────────────────────────────
+  await insertErrorTrace(ctx, {
+    provider: "openai",
+    model: "gpt-4o",
+    timestamp: ago(3 * DAY + 2 * HOUR),
+    durationMs: 288,
+    statusCode: 400,
+    error: "context_length_exceeded: This model's maximum context length is 128000 tokens. However, your messages resulted in 141,203 tokens. Please reduce the length of the messages.",
+    systemPrompt: "You are an SRE assistant. Find the root cause in the logs.",
+    messages: [{ role: "user", content: "Here are the full logs from all 6 pods during the incident window (14:02-14:47 UTC). What caused the 502s?\n\n[pasted: 6 × kubectl logs, 9,814 lines]" }],
+  });
+
+  // 13. Same prompt on two models: Sonnet original + Haiku replay ──────────────
+  {
+    const transcript = `Product sync - transcript (excerpt)
+
+Priya: OK, first thing - the CSV export bug. Jonas from Acme escalated again this morning.
+Tom: It's the timezone handling in the date filter. I have a fix, it just needs review.
+Priya: Can it go out today?
+Tom: If Lena reviews it after lunch, yes.
+Lena: I can do 1pm.
+Priya: Great. Second - the pricing page experiment. Results?
+Sam: Variant B with annual pricing first: 18% more annual sign-ups, monthly basically flat. It's significant, n is about 4,200 per variant.
+Priya: Then let's ship B to everyone. Sam, can you also write it up for the Thursday all-hands?
+Sam: Sure.
+Priya: Last thing, onboarding emails. Lena, you wanted to cut the sequence?
+Lena: From 7 emails to 4. Open rates drop off a cliff after the fourth one anyway. I'd like a decision by Friday so marketing can update the automation.
+Priya: Let's take it async - post the proposal in #growth and we decide there by Friday.`;
+    const system = "You turn meeting transcripts into notes: decisions, action items (owner + due date) and open questions. Nothing else.";
+    const original: AnthropicRawLog = {
+      request: { model: "claude-sonnet-4-6", max_tokens: 800, temperature: 0.2, system, messages: [{ role: "user", content: transcript }] },
+      response: {
+        id: anthropicId(), type: "message", role: "assistant", model: "claude-sonnet-4-6",
+        stop_reason: "end_turn", stop_sequence: null,
+        content: [{ type: "text", text: "## Decisions\n- Ship pricing page **variant B** (annual pricing first) to all visitors: +18% annual sign-ups, monthly flat, ~4,200 users per variant.\n\n## Action items\n| Owner | Action | Due |\n|---|---|---|\n| Lena | Review Tom's CSV export fix (date filter timezone) | Today, 13:00 |\n| Tom | Deploy the CSV export fix after review; let Jonas (Acme) know | Today |\n| Sam | Roll out variant B to 100% | - |\n| Sam | Write up the pricing experiment for the all-hands | Thursday |\n| Lena | Post the onboarding email proposal (7 → 4 emails) in #growth | Before Friday |\n\n## Open questions\n- Cut the onboarding sequence from 7 to 4 emails? To be decided async in #growth **by Friday** so marketing can update the automation." }],
+        usage: { input_tokens: 412, output_tokens: 226 },
+      },
+      timestamp: ago(26 * HOUR),
+      durationMs: 5240,
+    };
+    const originalId = await ingestAnthropic(ctx, original);
+
+    const replay = parseAnthropicLog({
+      request: { ...original.request, model: "claude-haiku-4-5" },
+      response: {
+        id: anthropicId(), type: "message", role: "assistant", model: "claude-haiku-4-5",
+        stop_reason: "end_turn", stop_sequence: null,
+        content: [{ type: "text", text: "## Decisions\n- Roll out pricing variant B (annual first) to everyone - +18% annual sign-ups.\n\n## Action items\n- **Lena** - review CSV export fix, today 13:00\n- **Tom** - ship CSV export fix today\n- **Sam** - ship variant B; write-up for Thursday all-hands\n- **Lena** - post onboarding email proposal in #growth\n\n## Open questions\n- Reduce onboarding emails from 7 to 4? Decide in #growth by Friday." }],
+        usage: { input_tokens: 412, output_tokens: 131 },
+      },
+      timestamp: ago(25 * HOUR),
+      durationMs: 1390,
+    });
+    if (replay.success) {
+      await ctx.insertTrace(replay.trace, originalId);
+      notes.push([replay.trace.id, "Replayed on Haiku: same decisions and owners, but it dropped \"let Jonas know\" and the due dates are less explicit. ~17× cheaper and ~4× faster - good enough for internal syncs, keep Sonnet for customer meetings."]);
+      starred.push(originalId);
+    }
+  }
+
+  // 14. Prompt A/B: same input, two system prompt versions (use Diff) ──────────
+  {
+    const input = "Write the release announcement for v2.4: scheduled exports (daily/weekly to S3 or email), 40% faster dashboard loading, and SSO with Okta for the Business plan.";
+    await ingestOpenAI(ctx, {
+      request: { model: "gpt-4o-mini", temperature: 0.7, max_tokens: 400, messages: [
+        { role: "system", content: "Write product announcements for our changelog." },
+        { role: "user", content: input },
+      ] },
+      response: {
+        id: openaiId(), object: "chat.completion", created: Math.floor(ago(4 * DAY) / 1000), model: "gpt-4o-mini",
+        choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: "🚀 Exciting news! Version 2.4 is here and it's our biggest release yet!\n\nWe've been working incredibly hard to bring you some amazing new features that will totally transform the way you work with your data!\n\n✨ **Scheduled Exports** - Now you can automatically export your reports daily or weekly straight to S3 or your inbox! No more manual exports!\n\n⚡ **Lightning-Fast Dashboards** - Dashboards now load a whopping 40% faster!\n\n🔐 **Okta SSO** - Business plan customers can now log in with Okta for enterprise-grade security!\n\nWe can't wait for you to try it out! Let us know what you think! 🎉" } }],
+        usage: { prompt_tokens: 58, completion_tokens: 156, total_tokens: 214 },
+      },
+      timestamp: ago(4 * DAY + 2 * HOUR),
+      durationMs: 1910,
+    });
+    const v2 = await ingestOpenAI(ctx, {
+      request: { model: "gpt-4o-mini", temperature: 0.7, max_tokens: 400, messages: [
+        { role: "system", content: "Write product announcements for our changelog. Audience: data engineers. Lead with what changed and why it matters. Max 120 words, no emoji, no exclamation marks, no superlatives." },
+        { role: "user", content: input },
+      ] },
+      response: {
+        id: openaiId(), object: "chat.completion", created: Math.floor(ago(4 * DAY) / 1000), model: "gpt-4o-mini",
+        choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: "## v2.4: scheduled exports, faster dashboards, Okta SSO\n\n**Scheduled exports.** Any report can now be exported daily or weekly to an S3 bucket or by email. Set it up once under *Report → Export → Schedule*; failed deliveries are retried and show up in the audit log.\n\n**Faster dashboards.** Dashboards load about 40% faster on average, thanks to query batching and caching of unchanged widgets. Large dashboards benefit most.\n\n**Okta SSO (Business plan).** Admins can connect Okta under *Settings → Security*. SCIM provisioning follows in v2.5." } }],
+        usage: { prompt_tokens: 84, completion_tokens: 128, total_tokens: 212 },
+      },
+      timestamp: ago(4 * DAY + 1 * HOUR),
+      durationMs: 1650,
+    });
+    starred.push(v2);
+    notes.push([v2, "Prompt v2: audience + word limit + no emoji. Compare with the v1 trace above using Diff - v2 is what we ship."]);
+  }
+
+  // 15. Quick multi-turn chat - a fast, cheap call ─────────────────────────────
+  await ingestOpenAI(ctx, {
+    request: { model: "gpt-4o-mini", temperature: 0.2, max_tokens: 300, messages: [
+      { role: "system", content: "You are a concise SQL helper for PostgreSQL." },
+      { role: "user", content: "How do I get the latest order per customer?" },
+      { role: "assistant", content: "Use `DISTINCT ON`:\n\n```sql\nSELECT DISTINCT ON (customer_id) *\nFROM orders\nORDER BY customer_id, created_at DESC;\n```" },
+      { role: "user", content: "And only customers whose latest order is older than 90 days?" },
+    ] },
+    response: {
+      id: openaiId(), object: "chat.completion", created: Math.floor(ago(14 * MIN) / 1000), model: "gpt-4o-mini",
+      choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: "Wrap it in a CTE and filter:\n\n```sql\nWITH latest AS (\n  SELECT DISTINCT ON (customer_id) customer_id, created_at\n  FROM orders\n  ORDER BY customer_id, created_at DESC\n)\nSELECT customer_id, created_at AS last_order_at\nFROM latest\nWHERE created_at < now() - interval '90 days';\n```\n\nAn index on `orders (customer_id, created_at DESC)` keeps this fast." } }],
+      usage: { prompt_tokens: 104, completion_tokens: 98, total_tokens: 202 },
+    },
+    timestamp: ago(14 * MIN),
+    durationMs: 640,
+  });
+
+  return { starred, notes };
+}
+
+// ── background traffic ────────────────────────────────────────────────────────
+// Lighter variants of the same product scenarios, spread over 30 days so the
+// dashboard charts (volume, cost, latency, errors, models) have realistic shape.
+
+const SUPPORT_CASES = [
+  { q: "Can I add 5 more seats to our plan mid-cycle?", a: "Yes - extra seats are prorated for the rest of this billing period. I've checked your account: adding 5 seats today costs $122.50 now, then $49/seat/month from your next invoice. Want me to add them?" },
+  { q: "Where can I download last month's invoice?", a: "Go to Settings → Billing → Invoices; every invoice has a PDF download. I can also resend it by e-mail - just say which address." },
+  { q: "We want to downgrade from Business to Pro. Do we lose our data?", a: "No data is deleted. The downgrade takes effect at the end of your current period. You'll lose SSO and audit logs, and reports older than 12 months become read-only." },
+  { q: "Our card was declined but the payment is fine on our side.", a: "I can see two declined attempts from your bank with code `do_not_honor` - that's the bank blocking it, often for foreign transactions. Please ask them to allow payments to Northwind Cloud; I've paused the suspension for 7 days." },
+  { q: "How do I get a VAT invoice with our company number?", a: "Add your VAT ID under Settings → Billing → Tax details. Future invoices include it automatically, and I've regenerated your last invoice with the VAT ID." },
+  { q: "Can you cancel our trial? We went with another tool.", a: "Done - your trial is cancelled and no card will be charged. Your workspace stays readable for 30 days in case you want to export anything." },
+];
+
+const HANDBOOK_QUESTIONS = [
+  { q: "How much is the learning budget and does it roll over?", a: "EUR 1,500 per year for courses, conferences and books, and unused budget does not roll over [6]. Conference travel counts against it [6]." },
+  { q: "Can I fly premium economy to the Austin conference?", a: "Only if the flight is longer than 8 hours [7]. Amsterdam-Austin usually is, so premium economy is allowed. Remember the travel also counts against your learning budget [6]." },
+  { q: "My monitor broke - can I expense a new one?", a: "Yes. Monitors, chairs and desks can be expensed once every 4 years, up to EUR 900 in total [4]." },
+  { q: "How long is parental leave for non-birthing parents?", a: "12 weeks fully paid, which you can split into up to three blocks within 18 months of the birth or adoption [5]." },
+  { q: "Can I work from Belgrade for two weeks?", a: "Serbia isn't on the restricted list [2], so yes - notify your manager and People Ops at least 14 days ahead [1]." },
+];
+
+const TICKETS = [
+  "Login with Google keeps redirecting me back to the login page.",
+  "Is there an API endpoint to bulk-delete old reports?",
+  "Your dashboard shows yesterday's revenue as $0, which is definitely wrong.",
+  "Love the new export feature, thanks team!",
+  "We need a DPA signed before we can roll out to the EU team.",
+  "Charts render blank in Safari 17 since the last update.",
+];
+
+const CODE_QUESTIONS = [
+  { q: "Why does this React effect run twice in development?", a: "React 18 Strict Mode mounts, unmounts and remounts components in development to surface effects without proper cleanup. It doesn't happen in production builds. Return a cleanup function (abort the fetch, unsubscribe) and the double run becomes harmless." },
+  { q: "Is `Promise.all` or `Promise.allSettled` better for loading 5 independent widgets?", a: "`Promise.allSettled` - with `Promise.all` one failing widget rejects the whole batch and the other four never render. With `allSettled` you render what succeeded and show an error state for the rest." },
+  { q: "How do I make this Postgres query use the index on `created_at`?", a: "The `date(created_at) = ...` call prevents index use. Rewrite it as a range: `created_at >= '2026-10-01' AND created_at < '2026-10-02'`. Then the B-tree index on `created_at` applies." },
+  { q: "What's the difference between `interface` and `type` in TypeScript here?", a: "For object shapes they're nearly interchangeable. Use `interface` when you want declaration merging or `extends` chains, and `type` for unions, mapped and conditional types. Pick one convention per codebase." },
+];
+
+const SUMMARIES = [
+  "Summarise this week's customer feedback from the #feedback channel into themes.",
+  "Summarise the incident report for INC-2291 for the status page.",
+  "Turn these release notes into a 3-bullet summary for sales.",
+  "Summarise the competitor's pricing page changes since last quarter.",
+];
+
+const ERRORS = [
+  { statusCode: 429, error: "rate_limit_error: Number of request tokens has exceeded your per-minute rate limit." },
+  { statusCode: 529, error: "overloaded_error: Overloaded" },
+  { statusCode: 500, error: "api_error: Internal server error" },
+  { statusCode: 504, error: "Request timed out after 60000 ms" },
+];
+
+async function seedBackgroundTrace(ctx: DemoSeedContext, timestamp: number): Promise<void> {
+  // ~3% of calls fail, like a real production workload
+  if (Math.random() < 0.03) {
+    const e = pick(ERRORS);
+    const anthropic = Math.random() < 0.6;
+    await insertErrorTrace(ctx, {
+      provider: anthropic ? "anthropic" : "openai",
+      model: anthropic ? pick(["claude-sonnet-4-6", "claude-haiku-4-5"]) : "gpt-4o",
+      timestamp,
+      durationMs: e.statusCode === 504 ? 60000 : randInt(180, 900),
+      statusCode: e.statusCode,
+      error: e.error,
+      messages: [{ role: "user", content: pick(SUPPORT_CASES).q }],
+    });
+    return;
+  }
+
+  const kind = pick(["support", "support", "handbook", "handbook", "ticket", "ticket", "code", "summary"] as const);
+  switch (kind) {
+    case "support": {
+      const c = pick(SUPPORT_CASES);
+      const model = Math.random() < 0.7 ? "claude-sonnet-4-6" : "claude-haiku-4-5";
+      const t = toolId();
+      await ingestAnthropic(ctx, {
+        request: {
+          model, max_tokens: 1024, temperature: 0.3,
+          system: [{ type: "text", text: SUPPORT_SYSTEM, cache_control: { type: "ephemeral" } }],
+          tools: SUPPORT_TOOLS,
+          messages: [
+            { role: "user", content: c.q },
+            { role: "assistant", content: [{ type: "tool_use", id: t, name: "lookup_customer", input: { email: `${pick(["ops", "finance", "it", "admin"])}@${pick(["acme-logistics", "globex", "initech", "umbrella-labs", "hooli"])}.com` } }] },
+            { role: "user", content: [{ type: "tool_result", tool_use_id: t, content: JSON.stringify({ customer_id: `cus_${rid(8)}`, plan: pick(["pro_monthly", "business_annual", "trial"]), seats: randInt(3, 60), status: "active" }) }] },
+          ],
         },
-      }],
-    },
-    response: {
-      id: `msg_${uid()}`, type: "message", role: "assistant",
-      content: [
-        { type: "tool_use", id: `toolu_${uid()}`, name: "get_weather", input: { location: "Warsaw, Poland", units: "celsius" } },
-        { type: "tool_use", id: `toolu_${uid()}`, name: "get_weather", input: { location: "Krakow, Poland", units: "celsius" } },
-      ],
-      model: "claude-sonnet-4-6", stop_reason: "tool_use", stop_sequence: null,
-      usage: { input_tokens: 108, output_tokens: 82 },
-    },
-    timestamp: hoursAgo(8), durationMs: 1640,
-  });
-  starred.push(m3);
-  noted.push([m3, "Tool use: two parallel get_weather calls issued in a single response."]);
-
-  // M-4. Multi-turn code review (Python SQL injection) — sonnet, 3d ago
-  const m4 = await seedAnthropic(api, {
-    request: {
-      model: "claude-sonnet-4-6",
-      messages: [
-        { role: "user", content: "Review this Python function:\n\ndef get_user(id):\n    conn = db.connect()\n    result = conn.execute(f'SELECT * FROM users WHERE id = {id}')\n    return result.fetchone()" },
-        { role: "assistant", content: "Two critical issues:\n\n1. **SQL injection** — interpolating `id` directly. An attacker can pass `1 OR 1=1` to read all rows.\n2. **Connection leak** — `conn` is never closed, exhausting your pool under load.\n\nFix:\n```python\ndef get_user(user_id: int):\n    with db.connect() as conn:\n        return conn.execute('SELECT * FROM users WHERE id = ?', (user_id,)).fetchone()\n```" },
-        { role: "user", content: "Good. How should I handle the case where the user doesn't exist?" },
-      ],
-      max_tokens: 1024,
-    },
-    response: {
-      id: `msg_${uid()}`, type: "message", role: "assistant",
-      content: [{ type: "text", text: "Return `None` and let the caller decide — don't raise for expected absence:\n\n```python\ndef get_user(user_id: int) -> dict | None:\n    with db.connect() as conn:\n        row = conn.execute('SELECT * FROM users WHERE id = ?', (user_id,)).fetchone()\n        return dict(row) if row else None\n\n# Caller handles None explicitly\nuser = get_user(42)\nif user is None:\n    return 404, {'error': 'User not found'}\n```\n\nThis keeps the function pure — one job, no HTTP concerns mixed in. It also makes unit tests trivial: just test that `None` is returned when the row is absent." }],
-      model: "claude-sonnet-4-6", stop_reason: "end_turn", stop_sequence: null,
-      usage: { input_tokens: 198, output_tokens: 168 },
-    },
-    timestamp: daysAgo(3), durationMs: 1180,
-  });
-  starred.push(m4);
-  noted.push([m4, "Good multi-turn code review — SQL injection + resource leak + None handling in one flow."]);
-
-  // M-5. Vitest unit tests — haiku with system, 11d ago
-  await seedAnthropic(api, {
-    request: {
-      model: "claude-haiku-4-5",
-      system: "You write concise, well-structured unit tests. Use Vitest syntax. No preamble.",
-      messages: [{ role: "user", content: "Write unit tests for `formatCurrency(amount: number, currency: string): string` that formats like `formatCurrency(1234.5, 'USD') → '$1,234.50'`. Cover edge cases." }],
-      max_tokens: 512,
-    },
-    response: {
-      id: `msg_${uid()}`, type: "message", role: "assistant",
-      content: [{ type: "text", text: "```typescript\nimport { describe, it, expect } from 'vitest';\nimport { formatCurrency } from './formatCurrency';\n\ndescribe('formatCurrency', () => {\n  it('formats USD with comma separators and 2 decimals', () => {\n    expect(formatCurrency(1234.5, 'USD')).toBe('$1,234.50');\n  });\n  it('formats EUR with correct symbol', () => {\n    expect(formatCurrency(999, 'EUR')).toBe('€999.00');\n  });\n  it('handles zero', () => {\n    expect(formatCurrency(0, 'USD')).toBe('$0.00');\n  });\n  it('handles large numbers', () => {\n    expect(formatCurrency(1_000_000, 'USD')).toBe('$1,000,000.00');\n  });\n  it('rounds to 2 decimal places', () => {\n    expect(formatCurrency(1.005, 'USD')).toBe('$1.01');\n  });\n  it('handles negative amounts', () => {\n    expect(formatCurrency(-42.5, 'USD')).toBe('-$42.50');\n  });\n});\n```" }],
-      model: "claude-haiku-4-5", stop_reason: "end_turn", stop_sequence: null,
-      usage: { input_tokens: 72, output_tokens: 208 },
-    },
-    timestamp: daysAgo(11), durationMs: 498,
-  });
-
-  // M-6. React useEffect + AbortController — gpt-4o multi-turn, 4d ago
-  const m6 = await seedOpenAI(api, {
-    request: {
-      model: "gpt-4o-2024-08-06",
-      messages: [
-        { role: "user", content: "My React useEffect is running twice in development:\n\nuseEffect(() => {\n  fetchUser(userId).then(setUser);\n}, [userId]);\n\nIs this a bug?" },
-        { role: "assistant", content: "Not a bug — React 18 Strict Mode intentionally double-invokes effects in development to surface non-idempotent side effects. In production effects run once. Your fetch fires twice but the second result just overwrites the first, which is harmless unless you have a subscription or counter." },
-        { role: "user", content: "The double fetch is hitting my rate limits during development. How do I prevent it without removing Strict Mode?" },
-      ],
-      max_tokens: 512,
-    },
-    response: {
-      id: `chatcmpl_${uid()}`, object: "chat.completion",
-      created: Math.floor(Date.now() / 1000), model: "gpt-4o-2024-08-06",
-      choices: [{ index: 0, message: { role: "assistant", content: "Add an `AbortController` — the cleanup function cancels the first (dev-only) request before it resolves:\n\n```jsx\nuseEffect(() => {\n  const controller = new AbortController();\n\n  fetchUser(userId, { signal: controller.signal })\n    .then(setUser)\n    .catch(err => {\n      if (err.name !== 'AbortError') throw err;\n    });\n\n  return () => controller.abort();\n}, [userId]);\n```\n\nOn the first (Strict Mode) unmount, `controller.abort()` cancels the in-flight request. The second mount starts fresh. In production the cleanup never fires early, so you get exactly one fetch.\n\nThis also correctly handles `userId` changes mid-fetch — the stale request is cancelled before the new one starts." }, finish_reason: "stop" }],
-      usage: { prompt_tokens: 168, completion_tokens: 174, total_tokens: 342 },
-    },
-    timestamp: daysAgo(4), durationMs: 1320,
-  });
-  starred.push(m6);
-  noted.push([m6, "AbortController pattern — great teaching example for React strict mode + cleanup."]);
-
-  // M-7. SQL index optimization — gpt-4o, 5d ago
-  await seedOpenAI(api, {
-    request: {
-      model: "gpt-4o-2024-08-06",
-      messages: [{ role: "user", content: "This query is slow on a 10M-row table:\n\nSELECT * FROM orders WHERE status = 'pending' AND created_at > '2024-01-01'\n\nWhat indexes should I add and why?" }],
-      max_tokens: 512,
-    },
-    response: {
-      id: `chatcmpl_${uid()}`, object: "chat.completion",
-      created: Math.floor(Date.now() / 1000), model: "gpt-4o-2024-08-06",
-      choices: [{ index: 0, message: { role: "assistant", content: "Add a composite index on `(status, created_at)`:\n\n```sql\nCREATE INDEX idx_orders_status_created\nON orders (status, created_at DESC);\n```\n\n**Why this order?** Equality predicate first (`status`) — the index jumps directly to 'pending' rows, then uses `created_at` for the range scan. Reversing them forces a full range scan on `created_at` first.\n\n**Drop `SELECT *`** — it forces a table heap fetch for every matched row. Specify only needed columns, or use a covering index:\n\n```sql\nCREATE INDEX idx_orders_covering\nON orders (status, created_at DESC)\nINCLUDE (id, customer_id, total_amount);\n```\n\nRun `EXPLAIN ANALYZE` before and after to confirm." }, finish_reason: "stop" }],
-      usage: { prompt_tokens: 74, completion_tokens: 192, total_tokens: 266 },
-    },
-    timestamp: daysAgo(5), durationMs: 842,
-  });
-
-  // M-8. Docker multi-stage — gpt-4o, 13d ago
-  await seedOpenAI(api, {
-    request: {
-      model: "gpt-4o-2024-08-06",
-      messages: [{ role: "user", content: "Write a production-ready Dockerfile for a Node.js 22 API: multi-stage build, non-root user, minimal image size, health check." }],
-      max_tokens: 512,
-    },
-    response: {
-      id: `chatcmpl_${uid()}`, object: "chat.completion",
-      created: Math.floor(Date.now() / 1000), model: "gpt-4o-2024-08-06",
-      choices: [{ index: 0, message: { role: "assistant", content: "```dockerfile\n# Stage 1: build\nFROM node:22-alpine AS builder\nWORKDIR /app\nCOPY package*.json ./\nRUN npm ci --ignore-scripts\nCOPY . .\nRUN npm run build\n\n# Stage 2: production\nFROM node:22-alpine AS runner\nWORKDIR /app\n\nRUN addgroup -S appgroup && adduser -S appuser -G appgroup\n\nCOPY package*.json ./\nRUN npm ci --omit=dev --ignore-scripts && npm cache clean --force\n\nCOPY --from=builder /app/dist ./dist\n\nHEALTHCHECK --interval=30s --timeout=3s \\\n  CMD wget -qO- http://localhost:3000/health || exit 1\n\nUSER appuser\nEXPOSE 3000\nENTRYPOINT [\"node\", \"dist/index.js\"]\n```\n\n`alpine` base keeps the image ~55 MB vs ~1 GB. `--omit=dev` in the production stage strips devDependencies. `--ignore-scripts` prevents postinstall footguns. HEALTHCHECK lets orchestrators (ECS, Kubernetes) detect unhealthy containers." }, finish_reason: "stop" }],
-      usage: { prompt_tokens: 40, completion_tokens: 228, total_tokens: 268 },
-    },
-    timestamp: daysAgo(13), durationMs: 714,
-  });
-
-  // ══ L — large, complex, multi-turn ═══════════════════════════════════════════
-
-  // L-1. SaaS business analysis — opus, 7d ago
-  const l1 = await seedAnthropic(api, {
-    request: {
-      model: "claude-opus-4-8",
-      messages: [{ role: "user", content: "Analyze the following SaaS business model and identify the top 3 risks with concrete mitigation steps:\n\nContext:\n- Product: B2B analytics platform for mid-market (50–500 employees)\n- Pricing: $299/seat/month\n- GTM: outbound sales + PLG (competing motions)\n- ARR: $180k, 8 customers, ACV $22.5k\n- Team: 6 engineers, 1 sales rep, 1 CS manager\n- Burn: $120k/month, 18 months runway\n- NPS: 42 (based on 6 responses)\n- Churn: 0% so far, but cohort is < 9 months old\n\nBe specific about what to do, not just what the risks are." }],
-      max_tokens: 2048,
-    },
-    response: {
-      id: `msg_${uid()}`, type: "message", role: "assistant",
-      content: [{ type: "text", text: "Looking at this model, three risks dominate — in order of urgency:\n\n**1. Revenue concentration risk (Critical — act now)**\n8 customers at $22.5k ACV means your top 2 customers likely represent 35–40% of ARR. One churn event before month 9 could be existential.\n\n*Mitigations:*\n- Set a hard target: 15 customers before your next funding conversation. Not for vanity — to make concentration survivable.\n- Identify your 2 best-fit customers and build an ICP document from their firmographic and behavioral traits. Your next 7 outbound targets should match on at least 4 of 5 attributes.\n- Add a quarterly business review cadence with your top 3 accounts. You've had 0% churn but 0 data — QBRs give you leading signals (usage drop, stakeholder change, budget cycle) before a cancel request.\n\n**2. GTM motion conflict (High — decide within 90 days)**\nOutbound sales and PLG are philosophically opposed and resource-competing. Outbound needs a consultative sales rep doing discovery calls; PLG needs a frictionless activation path that engineers build. With 1 sales rep and 6 engineers, you're under-resourced for either.\n\n*Mitigations:*\n- Look at how your 8 customers actually got there. If 6+ came from outbound, kill PLG investments for now and hire a second rep with your next funding. If 3+ came through self-serve, flip the ratio.\n- Set a 90-day experiment: freeze engineering PLG work, double outbound output. Measure pipeline velocity vs. engineering output per dollar spent. Pick the motion with better unit economics.\n- If you keep both, create a hard boundary: PLG for companies < 50 seats, outbound for 50+. Different pricing, different sales motion, different CSM SLA.\n\n**3. Pricing ceiling at $299/seat (Medium — redesign before Series A)**\nMid-market procurement will push back when you expand to 20+ seats ($6k+/month). Per-seat pricing creates a misaligned incentive: customers limit seats to control cost, which limits your usage data and reduces stickiness.\n\n*Mitigations:*\n- Move to a hybrid: platform fee ($X/month) + usage tier (events or API calls processed). This removes the expansion ceiling and aligns your revenue with the value customers get.\n- Before redesigning, run 3 pricing conversations with existing customers: 'If we moved to platform + usage, what would feel fair?' Their answers will calibrate your tiers.\n- Time this change: implement before your next 3 enterprise deals, not during renewal cycles with existing customers.\n\n**Immediate priority list:**\n1. Book QBRs with top 3 accounts this week.\n2. Interview 2 churned prospects to understand why they didn't buy.\n3. Decide GTM motion — give yourself a 90-day deadline with a forcing function (e.g., 'if we don't hit $250k ARR by [date] from outbound alone, we pivot to PLG')." }],
-      model: "claude-opus-4-8", stop_reason: "end_turn", stop_sequence: null,
-      usage: { input_tokens: 204, output_tokens: 618 },
-    },
-    timestamp: daysAgo(7), durationMs: 4820,
-  });
-  noted.push([l1, "High latency for Opus with long output — expected. Good for latency breakdown demos."]);
-
-  // L-2. Microservices architecture multi-turn — opus, 10d ago
-  const l2 = await seedAnthropic(api, {
-    request: {
-      model: "claude-opus-4-8",
-      messages: [
-        { role: "user", content: "We're migrating from a monolith to microservices. Should we use event-driven architecture or REST between services?" },
-        { role: "assistant", content: "Neither exclusively — use both where they fit:\n\n**REST** for synchronous, user-facing operations where latency and immediate consistency matter. Direct call, direct response, easy to trace.\n\n**Events** for broadcasting state changes where multiple services need to react and eventual consistency is acceptable.\n\nThe anti-pattern: making everything event-driven because it feels modern. You end up debugging a user request across 8 async hops with no stack trace." },
-        { role: "user", content: "We have orders and inventory that need to stay in sync. How do we handle consistency across those two services?" },
-        { role: "assistant", content: "Use the Saga pattern. Two variants:\n\n**Choreography** (simpler): Order Service emits `OrderPlaced` → Inventory Service reserves stock and emits `StockReserved` → Order Service confirms. On failure, each service emits a compensating event.\n\n**Orchestration** (better for complex flows): A dedicated Saga Orchestrator coordinates the sequence and handles rollbacks explicitly.\n\nFor your case, start with choreography. Add the **outbox pattern** to guarantee delivery: write the event to your DB in the same transaction as the state change. A background poller then publishes it. This prevents the 'DB committed, Kafka failed' split-brain." },
-        { role: "user", content: "What does the outbox pattern actually look like in code? Give me a concrete Postgres + Node.js example." },
-      ],
-      max_tokens: 1536,
-    },
-    response: {
-      id: `msg_${uid()}`, type: "message", role: "assistant",
-      content: [{ type: "text", text: "Here's a working outbox pattern for Postgres + Node.js:\n\n**1. Schema**\n```sql\nCREATE TABLE outbox_events (\n  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),\n  aggregate_type TEXT NOT NULL,   -- 'order', 'inventory'\n  aggregate_id   TEXT NOT NULL,\n  event_type     TEXT NOT NULL,   -- 'OrderPlaced', 'StockReserved'\n  payload        JSONB NOT NULL,\n  created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),\n  published_at   TIMESTAMPTZ          -- NULL = not yet published\n);\n\nCREATE INDEX idx_outbox_unpublished ON outbox_events (created_at)\n  WHERE published_at IS NULL;\n```\n\n**2. Write event in the same transaction as the state change**\n```typescript\nasync function placeOrder(pool: Pool, order: NewOrder): Promise<string> {\n  const client = await pool.connect();\n  try {\n    await client.query('BEGIN');\n\n    // 1. Write the order\n    const { rows: [{ id }] } = await client.query(\n      `INSERT INTO orders (customer_id, total) VALUES ($1, $2) RETURNING id`,\n      [order.customerId, order.total],\n    );\n\n    // 2. Write the event in the same transaction\n    await client.query(\n      `INSERT INTO outbox_events (aggregate_type, aggregate_id, event_type, payload)\n       VALUES ('order', $1, 'OrderPlaced', $2)`,\n      [id, JSON.stringify({ orderId: id, items: order.items, customerId: order.customerId })],\n    );\n\n    await client.query('COMMIT');\n    return id;\n  } catch (err) {\n    await client.query('ROLLBACK');\n    throw err;\n  } finally {\n    client.release();\n  }\n}\n```\n\n**3. Background relay (runs every 500ms)**\n```typescript\nasync function relayOutboxEvents(pool: Pool, kafka: KafkaProducer) {\n  const client = await pool.connect();\n  try {\n    // Lock rows so concurrent relay instances don't double-publish\n    const { rows } = await client.query(`\n      SELECT * FROM outbox_events\n      WHERE published_at IS NULL\n      ORDER BY created_at\n      LIMIT 100\n      FOR UPDATE SKIP LOCKED\n    `);\n\n    for (const event of rows) {\n      await kafka.send({\n        topic: event.event_type,\n        messages: [{ key: event.aggregate_id, value: JSON.stringify(event.payload) }],\n      });\n      await client.query(\n        `UPDATE outbox_events SET published_at = NOW() WHERE id = $1`,\n        [event.id],\n      );\n    }\n  } finally {\n    client.release();\n  }\n}\n\n// Start relay\nsetInterval(() => relayOutboxEvents(pool, kafka).catch(console.error), 500);\n```\n\nThe critical invariant: `FOR UPDATE SKIP LOCKED` means two relay processes running in parallel will never publish the same event twice. The ~500ms lag is acceptable for inventory sync; if you need lower latency, use Postgres `LISTEN/NOTIFY` to trigger the relay immediately after each commit." }],
-      model: "claude-opus-4-8", stop_reason: "end_turn", stop_sequence: null,
-      usage: { input_tokens: 422, output_tokens: 784 },
-    },
-    timestamp: daysAgo(10), durationMs: 6240,
-  });
-  starred.push(l2);
-  noted.push([l2, "Deep microservices thread — outbox pattern with working Postgres + Node.js code."]);
-
-  // L-3. pandas data analysis — gpt-4o multi-turn, 3d ago
-  const l3 = await seedOpenAI(api, {
-    request: {
-      model: "gpt-4o-2024-08-06",
-      messages: [
-        { role: "user", content: "Write a Python script using pandas to analyze user events. Find the top 5 most active users by event count in the last 7 days, including their average session duration." },
-        { role: "assistant", content: "```python\nimport pandas as pd\nfrom datetime import datetime, timedelta\n\ndef analyze_active_users(df: pd.DataFrame) -> pd.DataFrame:\n    cutoff = datetime.now() - timedelta(days=7)\n    recent = df[df['timestamp'] >= cutoff]\n    return (\n        recent.groupby('user_id')\n        .agg(event_count=('event_type', 'count'), avg_session_duration=('duration_seconds', 'mean'))\n        .sort_values('event_count', ascending=False)\n        .head(5)\n        .round({'avg_session_duration': 1})\n    )\n```\n`agg` computes both metrics in one pass — more efficient than chaining separate groupby operations." },
-        { role: "user", content: "Good. Now add: cohort retention — for users who first appeared in the last 30 days, what fraction came back the next day?" },
-        { role: "assistant", content: "```python\ndef cohort_day1_retention(df: pd.DataFrame) -> float:\n    df['date'] = pd.to_datetime(df['timestamp']).dt.date\n    first_seen = df.groupby('user_id')['date'].min().reset_index()\n    first_seen.columns = ['user_id', 'first_date']\n\n    cutoff = (datetime.now() - timedelta(days=30)).date()\n    new_users = first_seen[first_seen['first_date'] >= cutoff]\n\n    merged = df.merge(new_users, on='user_id')\n    merged['days_since_first'] = (pd.to_datetime(merged['date']) - pd.to_datetime(merged['first_date'])).dt.days\n\n    returned = merged[merged['days_since_first'] == 1]['user_id'].nunique()\n    return returned / len(new_users) if len(new_users) > 0 else 0.0\n```\nThis counts a user as 'retained' if they have any event exactly 1 day after their first event." },
-        { role: "user", content: "Can you combine both into a single report function that returns a dict with 'top_users' and 'day1_retention', and add a simple CLI?" },
-      ],
-      max_tokens: 1024,
-    },
-    response: {
-      id: `chatcmpl_${uid()}`, object: "chat.completion",
-      created: Math.floor(Date.now() / 1000), model: "gpt-4o-2024-08-06",
-      choices: [{ index: 0, message: { role: "assistant", content: "```python\nimport sys\nimport pandas as pd\nfrom datetime import datetime, timedelta\nfrom typing import TypedDict\n\nclass Report(TypedDict):\n    top_users: pd.DataFrame\n    day1_retention: float\n\ndef generate_report(df: pd.DataFrame) -> Report:\n    df['date'] = pd.to_datetime(df['timestamp']).dt.date\n    now = datetime.now()\n\n    # Top 5 active users — last 7 days\n    recent = df[df['timestamp'] >= now - timedelta(days=7)]\n    top_users = (\n        recent.groupby('user_id')\n        .agg(event_count=('event_type', 'count'), avg_session_s=('duration_seconds', 'mean'))\n        .sort_values('event_count', ascending=False)\n        .head(5)\n        .round({'avg_session_s': 1})\n    )\n\n    # Day-1 retention — cohort from last 30 days\n    first_seen = df.groupby('user_id')['date'].min().rename('first_date')\n    new_users = first_seen[first_seen >= (now - timedelta(days=30)).date()]\n    merged = df[df['user_id'].isin(new_users.index)].merge(new_users, on='user_id')\n    merged['days_since_first'] = (\n        pd.to_datetime(merged['date']) - pd.to_datetime(merged['first_date'])\n    ).dt.days\n    returned = merged[merged['days_since_first'] == 1]['user_id'].nunique()\n    retention = returned / len(new_users) if len(new_users) > 0 else 0.0\n\n    return {'top_users': top_users, 'day1_retention': retention}\n\ndef main():\n    path = sys.argv[1] if len(sys.argv) > 1 else 'events.csv'\n    df = pd.read_csv(path, parse_dates=['timestamp'])\n    report = generate_report(df)\n\n    print(\"\\n=== Top 5 Active Users (last 7 days) ===\")\n    print(report['top_users'].to_string())\n    print(f\"\\n=== Day-1 Retention (last 30-day cohort) ===\")\n    print(f\"{report['day1_retention']:.1%}\")\n\nif __name__ == '__main__':\n    main()\n```\n\nRun with `python report.py events.csv`. The `TypedDict` return type makes downstream usage IDE-friendly without runtime overhead." }, finish_reason: "stop" }],
-      usage: { prompt_tokens: 388, completion_tokens: 448, total_tokens: 836 },
-    },
-    timestamp: daysAgo(3), durationMs: 2840,
-  });
-  starred.push(l3);
-
-  // L-4. TypeScript fetchWithRetry review — gpt-4o, 9d ago
-  await seedOpenAI(api, {
-    request: {
-      model: "gpt-4o-2024-08-06",
-      messages: [
-        { role: "user", content: "Review this TypeScript function:\n\nasync function fetchWithRetry(url: string, retries = 3) {\n  for (let i = 0; i < retries; i++) {\n    try {\n      return await fetch(url);\n    } catch (e) {\n      if (i === retries - 1) throw e;\n    }\n  }\n}" },
-        { role: "assistant", content: "Three issues:\n\n1. **No backoff** — retrying immediately hammers a struggling server. Add `await sleep(2 ** i * 100)`.\n2. **Retries non-transient errors** — a 404 won't be fixed by retrying. Check `response.ok` and skip retry for < 500 status.\n3. **Implicit `undefined` return** — TypeScript infers `Promise<Response | undefined>`. Explicit `Promise<Response>` makes the compiler catch the silent undefined." },
-        { role: "user", content: "Show me the fixed version with all three issues addressed, plus proper JSDoc." },
-      ],
-      max_tokens: 768,
-    },
-    response: {
-      id: `chatcmpl_${uid()}`, object: "chat.completion",
-      created: Math.floor(Date.now() / 1000), model: "gpt-4o-2024-08-06",
-      choices: [{ index: 0, message: { role: "assistant", content: "```typescript\n/**\n * Fetch with exponential backoff retry.\n * Only retries on network errors and 5xx responses.\n * @param url - Target URL\n * @param options - Fetch options\n * @param retries - Maximum number of attempts (default: 3)\n * @throws {Error} After all retries are exhausted\n */\nasync function fetchWithRetry(\n  url: string,\n  options: RequestInit = {},\n  retries = 3,\n): Promise<Response> {\n  let lastError: unknown;\n\n  for (let attempt = 0; attempt < retries; attempt++) {\n    try {\n      const response = await fetch(url, options);\n\n      // Don't retry client errors — they won't self-heal\n      if (response.ok || response.status < 500) return response;\n\n      lastError = new Error(`HTTP ${response.status}`);\n    } catch (err) {\n      // Network error (DNS failure, connection refused, etc.)\n      lastError = err;\n    }\n\n    if (attempt < retries - 1) {\n      // Exponential backoff: 100ms, 200ms, 400ms…\n      await new Promise(r => setTimeout(r, 2 ** attempt * 100));\n    }\n  }\n\n  throw lastError ?? new Error('Max retries exceeded');\n}\n\n// Usage\nconst res = await fetchWithRetry('https://api.example.com/data', {\n  headers: { Authorization: `Bearer ${token}` },\n}, 4);\n```\n\nKey change: `lastError` accumulates the failure reason so the final `throw` gives the caller actionable context, not just 'max retries exceeded'." }, finish_reason: "stop" }],
-      usage: { prompt_tokens: 248, completion_tokens: 318, total_tokens: 566 },
-    },
-    timestamp: daysAgo(9), durationMs: 1980,
-  });
-
-  // ══ XL — very large, document-scale ══════════════════════════════════════════
-
-  // XL-1. Distributed rate limiting spec — gpt-4o, 6d ago
-  const xl1 = await seedOpenAI(api, {
-    request: {
-      model: "gpt-4o-2024-08-06",
-      messages: [{ role: "user", content: "Write a comprehensive technical specification for a distributed rate limiting system. Requirements:\n- Handle 500k requests/second across 20 global regions\n- Sub-millisecond enforcement overhead per request\n- Eventual consistency with max 200ms staleness\n- Support multiple rate limit strategies: token bucket, sliding window, fixed window\n- Fail-open behavior during network partitions\n- Per-customer, per-endpoint, and global limits\n- Real-time observability (p99 enforcement latency, limit hit rate, regional counters)\n- Admin API for dynamic limit configuration without restart\n\nInclude: architecture overview, data structures, synchronization protocol, failure modes, deployment topology, and observability design. Be concrete — include pseudocode or data structure definitions where they clarify the design." }],
-      max_tokens: 4096,
-    },
-    response: {
-      id: `chatcmpl_${uid()}`, object: "chat.completion",
-      created: Math.floor(Date.now() / 1000), model: "gpt-4o-2024-08-06",
-      choices: [{ index: 0, message: { role: "assistant", content: "# Distributed Rate Limiting System — Technical Specification\n\n## 1. Architecture Overview\n\nThree-tier design: local enforcement (< 1ms), regional aggregation (~10ms), global sync (< 200ms).\n\n```\n[Request] → [Sidecar Agent] → [Regional Redis Cluster] ← gossip → [Global Coordinator]\n                ↕ atomic CAS                                              ↕ config push\n           [Local Memory]                                          [Admin API]\n```\n\nEach region has a sidecar agent co-located with API gateway replicas. The sidecar enforces locally using atomic in-memory counters and syncs with the regional Redis cluster every 50ms. Regional clusters gossip to each other every 100ms via a CRDT-based counter merge.\n\n## 2. Data Structures\n\n### Rate Limit Key\n```typescript\ninterface RateLimitKey {\n  customerId: string;\n  endpoint: string;     // e.g. 'POST /v1/chat'\n  region: string;       // e.g. 'us-east-1'\n  windowStart: number;  // unix seconds, truncated to window boundary\n}\n\n// Serialized: 'cust_{id}:ep_{hash}:reg_{region}:w_{windowStart}'\n```\n\n### Counter (CRDT G-Counter per region)\n```typescript\ninterface RegionalCounter {\n  key: RateLimitKey;\n  localCount: bigint;                     // only this region increments this\n  peerCounts: Record<string, bigint>;     // last known count from each peer region\n  limit: number;\n  strategy: 'token_bucket' | 'sliding_window' | 'fixed_window';\n  updatedAt: number;\n}\n\n// Global view: sum of localCount + all peerCounts\nfunction globalCount(c: RegionalCounter): bigint {\n  return c.localCount + Object.values(c.peerCounts).reduce((s, v) => s + v, 0n);\n}\n```\n\n### Token Bucket State\n```typescript\ninterface TokenBucket {\n  tokens: number;      // current available tokens (float, allows fractional)\n  lastRefill: number;  // unix ms\n  ratePerSec: number;\n  capacity: number;\n}\n\nfunction consume(bucket: TokenBucket, cost: number, now: number): boolean {\n  const elapsed = (now - bucket.lastRefill) / 1000;\n  bucket.tokens = Math.min(bucket.capacity, bucket.tokens + elapsed * bucket.ratePerSec);\n  bucket.lastRefill = now;\n  if (bucket.tokens >= cost) { bucket.tokens -= cost; return true; }\n  return false;\n}\n```\n\n## 3. Local Enforcement (< 1ms path)\n\n```typescript\nclass LocalEnforcer {\n  // Sharded by key hash to reduce lock contention\n  private shards: Array<Map<string, TokenBucket | SlidingWindow>> = \n    Array.from({ length: 256 }, () => new Map());\n\n  check(key: string, cost = 1): 'allow' | 'deny' {\n    const shard = this.shards[hashKey(key) & 0xFF]!;\n    const state = shard.get(key) ?? this.createState(key);\n    // Atomic CAS via single-threaded Node.js event loop — no locks needed\n    return applyStrategy(state, cost, Date.now()) ? 'allow' : 'deny';\n  }\n}\n```\n\nSingle-threaded Node.js eliminates lock contention. 256 shards keep Map lookup O(1) with good cache locality. Target: < 50µs per enforcement check.\n\n## 4. Regional Sync (50ms cycle)\n\n```typescript\nasync function syncWithRegionalRedis(enforcer: LocalEnforcer, redis: Redis) {\n  const dirty = enforcer.drainDirtyKeys();  // keys modified since last sync\n  \n  const pipe = redis.pipeline();\n  for (const key of dirty) {\n    const delta = enforcer.getDelta(key);   // increments since last sync\n    pipe.incrby(`counter:${key}`, delta);\n    pipe.expire(`counter:${key}`, 120);     // TTL = 2 × window\n  }\n  await pipe.exec();\n\n  // Pull peer region counts for active keys\n  const peerKeys = dirty.map(k => `peer:*:${k}`);\n  const peerCounts = await redis.mget(...peerKeys);\n  enforcer.updatePeerCounts(peerKeys, peerCounts);\n}\n```\n\n## 5. Global Gossip Protocol (100ms cycle)\n\nRegions broadcast their per-key delta vectors using a gossip ring (each region pushes to 2 neighbors). Full convergence in O(log R) rounds where R = number of regions = 20 → 5 rounds = 500ms worst case. Acceptable given 200ms staleness SLA with 2 gossip rounds (200ms).\n\n```typescript\ninterface GossipMessage {\n  fromRegion: string;\n  seq: number;          // monotonically increasing per region\n  deltas: Array<{ key: string; count: bigint; windowStart: number }>;\n}\n```\n\nDuplicate suppression via `seq` numbers — a region discards gossip with seq ≤ last seen seq from that peer.\n\n## 6. Failure Modes\n\n| Failure | Detection | Behavior |\n|---------|-----------|----------|\n| Regional Redis down | health check + 3 failed syncs | Fall back to local-only enforcement; accept ±15% burst over limit |\n| Gossip peer unreachable | missed acks × 3 | Widen staleness window; alert if > 500ms |\n| Counter overflow (unlikely at 64-bit) | threshold check at 90% max | Reset window early with distributed 2PC |\n| Admin API unreachable | N/A | Serve last known config; log stale config warning |\n\n**Fail-open policy:** if the sidecar itself crashes or hangs (> 5ms on enforcement path), the request is allowed and the event is logged to a dead-letter queue for retroactive billing adjustment.\n\n## 7. Admin API\n\n```http\n# Update limit for a customer+endpoint, effective within 2 gossip rounds (~200ms)\nPATCH /admin/limits\n{ \"customerId\": \"cust_123\", \"endpoint\": \"POST /v1/chat\", \"rps\": 100, \"burst\": 150 }\n\n# Read current counters (regional breakdown)\nGET /admin/limits/cust_123/counters\n→ { \"us-east-1\": 42, \"eu-west-1\": 18, \"ap-southeast-1\": 5, \"global\": 65 }\n\n# Immediate block (propagates in < 50ms via Redis pub/sub)\nPOST /admin/limits/cust_123/block\n```\n\nConfig changes are written to a central config store (DynamoDB) and pushed via Redis pub/sub to all regional coordinators. Sidecars poll their regional coordinator every 10s as a fallback.\n\n## 8. Observability\n\n```typescript\n// Emitted per enforcement decision\ninterface EnforcementEvent {\n  key: string;\n  decision: 'allow' | 'deny';\n  localCount: number;\n  globalEstimate: number;\n  limit: number;\n  enforcementLatencyUs: number;  // microseconds\n  staleness: number;              // ms since last regional sync\n}\n```\n\nMetrics pipeline: sidecar → local StatsD (UDP, non-blocking) → regional Prometheus → Grafana global view. P99 enforcement latency alert threshold: 500µs. Limit hit rate alert: > 5% of requests denied for a single customer in a 1-minute window (possible misconfiguration)." }, finish_reason: "stop" }],
-      usage: { prompt_tokens: 168, completion_tokens: 1482, total_tokens: 1650 },
-    },
-    timestamp: daysAgo(6), durationMs: 9840,
-  });
-  noted.push([xl1, "Very large output (1482 tokens, 9.8s) — good for latency + cost analysis in dashboard."]);
-
-  // XL-2. Full code generation: auth middleware suite — sonnet, long system prompt, 1d ago
-  const xl2 = await seedAnthropic(api, {
-    request: {
-      model: "claude-sonnet-4-6",
-      system: "You are a senior backend engineer specializing in Node.js and TypeScript security patterns. You write production-grade code with full type coverage, comprehensive error handling, and inline documentation only where non-obvious. When generating code, include: the implementation, a test suite using Vitest, and a usage example. Follow these constraints: no external auth libraries (no passport, no auth0 SDK), use standard Node.js crypto module, all tokens are opaque random bytes encoded as base64url.",
-      messages: [{
-        role: "user",
-        content: "Build a complete JWT-free authentication middleware for a Fastify API. Requirements:\n\n1. Session tokens: 32 random bytes, base64url-encoded, stored in an httpOnly SameSite=Strict cookie\n2. Token storage: in-memory Map with TTL-based expiry (no Redis dependency for now)\n3. Middleware: validates cookie, looks up session, rejects expired/missing sessions with 401\n4. createSession(userId): creates and stores a session, returns the token\n5. destroySession(token): removes the session\n6. Session data: { userId, createdAt, expiresAt, lastSeenAt } — update lastSeenAt on each valid request\n7. Session TTL: 24h from creation, sliding 1h window on lastSeenAt (whichever is later)\n8. Include a cleanup interval that evicts expired sessions every 5 minutes\n9. The middleware should attach `request.session` with the session data\n\nGenerate the full implementation, Vitest tests, and a Fastify plugin wrapper."
-      }],
-      max_tokens: 4096,
-    },
-    response: {
-      id: `msg_${uid()}`, type: "message", role: "assistant",
-      content: [{ type: "text", text: "```typescript\n// session-store.ts\nimport { randomBytes } from 'node:crypto';\n\nexport interface SessionData {\n  userId: string;\n  createdAt: Date;\n  expiresAt: Date;\n  lastSeenAt: Date;\n}\n\nconst TTL_MS = 24 * 60 * 60 * 1000;     // 24h hard limit\nconst SLIDE_MS = 60 * 60 * 1000;         // 1h sliding window\n\nexport class SessionStore {\n  private sessions = new Map<string, SessionData>();\n  private cleanupTimer: NodeJS.Timeout;\n\n  constructor(cleanupIntervalMs = 5 * 60 * 1000) {\n    this.cleanupTimer = setInterval(() => this.evictExpired(), cleanupIntervalMs);\n    this.cleanupTimer.unref(); // don't keep process alive\n  }\n\n  createSession(userId: string): string {\n    const token = randomBytes(32).toString('base64url');\n    const now = new Date();\n    this.sessions.set(token, {\n      userId,\n      createdAt: now,\n      expiresAt: new Date(now.getTime() + TTL_MS),\n      lastSeenAt: now,\n    });\n    return token;\n  }\n\n  getSession(api: DemoApiCall): SessionData | null {\n    const session = this.sessions.get(token);\n    if (!session) return null;\n    const now = new Date();\n    // Expired: past hard TTL or past sliding window\n    if (now > session.expiresAt || now.getTime() - session.lastSeenAt.getTime() > SLIDE_MS) {\n      this.sessions.delete(token);\n      return null;\n    }\n    session.lastSeenAt = now;\n    return session;\n  }\n\n  destroySession(api: DemoApiCall): boolean {\n    return this.sessions.delete(token);\n  }\n\n  private evictExpired() {\n    const now = new Date();\n    for (const [token, session] of this.sessions) {\n      if (now > session.expiresAt || now.getTime() - session.lastSeenAt.getTime() > SLIDE_MS) {\n        this.sessions.delete(token);\n      }\n    }\n  }\n\n  destroy() {\n    clearInterval(this.cleanupTimer);\n    this.sessions.clear();\n  }\n\n  get size() { return this.sessions.size; }\n}\n```\n\n```typescript\n// session-plugin.ts\nimport type { FastifyPluginAsync, FastifyRequest } from 'fastify';\nimport fp from 'fastify-plugin';\nimport { SessionStore, type SessionData } from './session-store.js';\n\ndeclare module 'fastify' {\n  interface FastifyRequest {\n    session: SessionData | null;\n  }\n  interface FastifyInstance {\n    sessionStore: SessionStore;\n  }\n}\n\nconst COOKIE_NAME = 'sid';\n\nconst sessionPlugin: FastifyPluginAsync = async (fastify) => {\n  const store = new SessionStore();\n  fastify.decorate('sessionStore', store);\n  fastify.decorateRequest('session', null);\n\n  fastify.addHook('onClose', () => store.destroy());\n\n  fastify.addHook('preHandler', async (request: FastifyRequest, reply) => {\n    const token = request.cookies[COOKIE_NAME];\n    if (!token) { request.session = null; return; }\n    const session = store.getSession(token);\n    if (!session) {\n      reply.clearCookie(COOKIE_NAME);\n      request.session = null;\n    } else {\n      request.session = session;\n    }\n  });\n};\n\nexport default fp(sessionPlugin, { name: 'session' });\n\n// Helper to set the session cookie after login\nexport function setSessionCookie(reply: FastifyReply, api: DemoApiCall) {\n  reply.setCookie(COOKIE_NAME, token, {\n    httpOnly: true,\n    sameSite: 'strict',\n    path: '/',\n    maxAge: 24 * 60 * 60, // seconds\n  });\n}\n```\n\n```typescript\n// session-store.test.ts\nimport { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';\nimport { SessionStore } from './session-store.js';\n\ndescribe('SessionStore', () => {\n  let store: SessionStore;\n\n  beforeEach(() => { store = new SessionStore(Infinity); }); // disable auto-cleanup\n  afterEach(() => store.destroy());\n\n  it('creates a session and retrieves it', () => {\n    const token = store.createSession('user_1');\n    expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/); // 32 bytes base64url\n    const session = store.getSession(token);\n    expect(session?.userId).toBe('user_1');\n  });\n\n  it('updates lastSeenAt on each access', () => {\n    const token = store.createSession('user_1');\n    const first = store.getSession(token)!.lastSeenAt;\n    vi.advanceTimersByTime(1000);\n    const second = store.getSession(token)!.lastSeenAt;\n    expect(second.getTime()).toBeGreaterThan(first.getTime());\n  });\n\n  it('returns null for unknown tokens', () => {\n    expect(store.getSession('bogus')).toBeNull();\n  });\n\n  it('destroys a session', () => {\n    const token = store.createSession('user_1');\n    store.destroySession(token);\n    expect(store.getSession(token)).toBeNull();\n  });\n\n  it('expires session past 24h TTL', () => {\n    vi.useFakeTimers();\n    const token = store.createSession('user_1');\n    vi.advanceTimersByTime(25 * 60 * 60 * 1000);\n    expect(store.getSession(token)).toBeNull();\n    vi.useRealTimers();\n  });\n\n  it('expires session idle for more than 1h', () => {\n    vi.useFakeTimers();\n    const token = store.createSession('user_1');\n    vi.advanceTimersByTime(61 * 60 * 1000);\n    expect(store.getSession(token)).toBeNull();\n    vi.useRealTimers();\n  });\n\n  it('evictExpired removes stale sessions', () => {\n    vi.useFakeTimers();\n    store.createSession('user_1');\n    store.createSession('user_2');\n    vi.advanceTimersByTime(25 * 60 * 60 * 1000);\n    (store as unknown as { evictExpired(): void }).evictExpired();\n    expect(store.size).toBe(0);\n    vi.useRealTimers();\n  });\n});\n```\n\n```typescript\n// Usage in a Fastify app\nimport Fastify from 'fastify';\nimport cookie from '@fastify/cookie';\nimport sessionPlugin, { setSessionCookie } from './session-plugin.js';\n\nconst app = Fastify();\nawait app.register(cookie);\nawait app.register(sessionPlugin);\n\napp.post('/login', async (request, reply) => {\n  const { email, password } = request.body as { email: string; password: string };\n  const user = await verifyCredentials(email, password); // your logic\n  if (!user) return reply.status(401).send({ error: 'Invalid credentials' });\n  const token = app.sessionStore.createSession(user.id);\n  setSessionCookie(reply, token);\n  return { ok: true };\n});\n\napp.post('/logout', async (request, reply) => {\n  const token = request.cookies['sid'];\n  if (token) app.sessionStore.destroySession(token);\n  reply.clearCookie('sid');\n  return { ok: true };\n});\n\napp.get('/me', async (request, reply) => {\n  if (!request.session) return reply.status(401).send({ error: 'Unauthorized' });\n  return { userId: request.session.userId, lastSeenAt: request.session.lastSeenAt };\n});\n```" }],
-      model: "claude-sonnet-4-6", stop_reason: "end_turn", stop_sequence: null,
-      usage: { input_tokens: 612, output_tokens: 1688 },
-    },
-    timestamp: hoursAgo(22), durationMs: 7120,
-  });
-  starred.push(xl2);
-  noted.push([xl2, "XL trace — long system prompt + complex code generation + tests. High input + output tokens."]);
-
-  // XL-3. RAG document analysis — opus, 12d ago
-  const xl3 = await seedAnthropic(api, {
-    request: {
-      model: "claude-opus-4-8",
-      system: "You are a technical due diligence analyst. You analyze software architecture documents, engineering blog posts, and technical specs provided by acquisition targets. Your job is to identify technical risks, assess engineering quality, and provide an honest risk rating. Format: Risk level (Low/Medium/High/Critical), Executive summary (3 sentences), Detailed findings (bullet points per category), Red flags (if any), Recommended follow-up questions.",
-      messages: [{
-        role: "user",
-        content: "Analyze the following technical architecture document from a Series B SaaS company we're evaluating for acquisition at $45M:\n\n---\nARCHITECTURE OVERVIEW — DataStream Analytics Platform\n\nBackend: Python 3.8 monolith (Django 2.2 LTS), 180k lines of code, single PostgreSQL 11 instance (no read replicas), deployed on a single EC2 r5.4xlarge. No CDN. Redis for session storage only.\n\nFrontend: jQuery 2.x + Bootstrap 3, server-side rendering via Django templates. No TypeScript. No component framework.\n\nInfrastructure: Manual EC2 deployments via SSH and a bash script. No IaC. No CI/CD pipeline — developers push directly to main and SSH to deploy. Single availability zone (us-east-1a). No auto-scaling. RDS automated backups enabled, last restore test: never.\n\nData: 2.1TB PostgreSQL database, 340M rows in the events table with no partitioning. Largest table has 12 indexes. p99 query latency: 8.2 seconds (per their own Datadog). Reported uptime: 99.1% over the last 12 months.\n\nSecurity: MD5 password hashing (from a 2019 migration that was 'never finished'). No WAF. Dependencies last audited: 'when we hired the first engineer' (2021). 14 known CVEs in npm lockfile, status unknown for Python packages. SOC 2 Type II: not started, 'planning to begin Q3'.\n\nTeam: 3 engineers (2 backend, 1 frontend/DevOps). Founders are both technical. 0 dedicated QA. Test coverage: ~18% (estimate, not measured). No on-call rotation — engineers are notified by customers.\n\nCustomer data: 47 enterprise customers, data residency requirements for 6 EU customers (GDPR), no data processing agreements in place with EU customers.\n---\n\nProvide your full technical due diligence assessment."
-      }],
-      max_tokens: 3000,
-    },
-    response: {
-      id: `msg_${uid()}`, type: "message", role: "assistant",
-      content: [{ type: "text", text: "## Technical Due Diligence Assessment — DataStream Analytics\n\n**Risk Level: CRITICAL**\n\n**Executive Summary:** DataStream presents a cluster of critical technical and legal risks that would require immediate and substantial remediation investment post-acquisition. The combination of MD5 password storage, absent GDPR compliance infrastructure, and a single-point-of-failure architecture creates both regulatory exposure and operational fragility that significantly affects the $45M valuation. We estimate $2–4M in remediation engineering costs and 12–18 months to reach defensible enterprise standards, plus potential regulatory liability that is currently unquantifiable.\n\n---\n\n### Security Findings\n\n**Critical:**\n- **MD5 password hashing**: MD5 is cryptographically broken for password storage since ~2004. Any database breach exposes all customer passwords in hours via rainbow tables. This is not a compliance gap — it's an active breach risk. Remediation requires a forced password reset for all ~47 enterprise accounts' end users, with reputational and contractual implications.\n- **14 known CVEs in npm lockfile, Python packages unaudited**: Unknown blast radius. Requires immediate dependency audit. If any CVE is exploitable in their stack, breach notification obligations may already exist.\n- **No WAF**: 47 enterprise customers with no layer-7 protection. Public-facing Django 2.2 has known security patches that were discontinued in April 2022.\n\n**High:**\n- Django 2.2 reached EOL April 2022. No security patches for 2+ years.\n- No penetration test history found in data room.\n- Session tokens in Redis with no token rotation policy.\n\n### Data & Compliance Findings\n\n**Critical:**\n- **GDPR breach already in progress**: 6 EU customers with no Data Processing Agreements in place. Under GDPR Article 28, processing EU personal data without a DPA is a violation — not a gap to close, an active violation. Fines: up to 4% of global annual turnover or €20M, whichever is higher.\n- **No data residency enforcement**: EU customer data is stored in us-east-1a with no documented controls. Depending on customer contracts, this may be a breach of contract in addition to regulatory exposure.\n- **Backup restore never tested**: 2.1TB database, automated backups enabled, but zero restore validation. This is not a compliance issue — it's a disaster recovery fiction. Assume RTO/RPO is unknown.\n\n**High:**\n- 340M-row unpartitioned events table with p99 of 8.2 seconds is architecturally unsustainable. Growth of 20% in data volume will likely cause p99 to exceed 30 seconds without partitioning and query optimization.\n- 12 indexes on the largest table suggests query-by-query index addition without an index strategy, which increases write amplification.\n\n### Infrastructure & Operations\n\n**High:**\n- Single AZ deployment with no auto-scaling: one hardware failure = full outage. Their 99.1% uptime = ~79 hours downtime/year, consistent with this architecture.\n- Manual SSH deployments with no CI/CD: no deployment audit trail, no rollback capability, developer access to production is a SOC 2 showstopper.\n- No IaC: infrastructure is undocumented by definition. Reconstruction time after a failure is unknown.\n\n**Medium:**\n- 3-engineer team with 0 QA and no on-call rotation is unsustainable at 47 enterprise customers. Key-person risk is extreme — losing one backend engineer halves the team's capacity.\n- 18% test coverage (unverified) means refactoring the monolith during remediation carries high regression risk.\n\n### Engineering Quality\n\n**Medium:**\n- Django monolith at 180k lines is not inherently problematic, but combined with 18% coverage and no CI/CD, it's very difficult to safely evolve.\n- jQuery 2.x + Bootstrap 3 frontend is 10 years behind current practice. For a data analytics product, this likely limits the UI capabilities that enterprise customers will expect.\n- Python 3.8 reaches EOL October 2024.\n\n---\n\n### Red Flags\n\n1. **'GDPR planning hasn't started'** at $45M ARR with 6 EU enterprise customers is a legal department conversation, not an engineering one.\n2. **'Last restore test: never'** is not a gap — it's the absence of disaster recovery.\n3. **'Dependencies last audited when we hired the first engineer (2021)'** combined with 14 known CVEs suggests security has never been a priority, not that it was deprioritized under growth pressure.\n4. **MD5 migration 'never finished'** since 2019 (5 years) suggests the team is aware of the issue and chose not to fix it. This is a culture signal.\n\n---\n\n### Recommended Follow-Up Questions\n\n1. What are the contractual SLA commitments to enterprise customers, and what are the penalty clauses? (Given 99.1% uptime, have penalties been triggered?)\n2. Provide the full CVE list for Python packages — we need to determine if any are exploitable in their deployment.\n3. Has any customer contractually required SOC 2? If so, how is that commitment being met today?\n4. What is the current process for a production incident? Who holds the pager?\n5. Obtain all EU customer contracts and DPA status — we need legal to review before signing any acquisition agreement.\n6. Request a backup restore exercise before close — restore a point-in-time copy of the 2.1TB database to a test environment and verify data integrity.\n\n---\n\n**Acquisition Recommendation:** Do not proceed at $45M without:\n(a) A $2–4M remediation escrow held at close for security and compliance work,\n(b) GDPR legal review and DPA execution with all 6 EU customers prior to signing,\n(c) An independent penetration test with findings disclosed to buyer before close,\n(d) Verified backup restore capability.\n\nIf the seller is unwilling to accommodate these conditions, the risk profile does not support the current valuation." }],
-      model: "claude-opus-4-8", stop_reason: "end_turn", stop_sequence: null,
-      usage: { input_tokens: 988, output_tokens: 1142 },
-    },
-    timestamp: daysAgo(12), durationMs: 11480,
-  });
-  starred.push(xl3);
-  noted.push([xl3, "XL: 988 input tokens (long doc) + 1142 output. Longest trace by cost — great for dashboard spend chart."]);
-
-  return { starred, noted };
-}
-
-// ── background volume traces for dashboard charts ─────────────────────────────
-
-interface BackgroundTrace {
-  provider: "anthropic" | "openai";
-  model: string;
-  daysAgoOffset: number;
-  inputTokens: number;
-  outputTokens: number;
-  durationMs: number;
-}
-
-const BG_MODELS = [
-  { provider: "anthropic" as const, model: "claude-haiku-4-5" },
-  { provider: "anthropic" as const, model: "claude-haiku-4-5" },
-  { provider: "anthropic" as const, model: "claude-sonnet-4-6" },
-  { provider: "anthropic" as const, model: "claude-opus-4-8" },
-  { provider: "openai" as const, model: "gpt-4o-mini" },
-  { provider: "openai" as const, model: "gpt-4o-mini" },
-  { provider: "openai" as const, model: "gpt-4o-2024-08-06" },
-];
-
-// Size buckets: [inputMin, inputMax, outputMin, outputMax, durMin, durMax, weight]
-const SIZE_BUCKETS = [
-  [15,  60,   25,  80,   80,   280,  4],  // XS — frequent
-  [60,  200,  80,  280,  280,  800,  4],  // S  — frequent
-  [200, 500,  280, 700,  800,  2000, 3],  // M  — common
-  [500, 1200, 700, 1800, 2000, 5500, 2],  // L  — occasional
-  [1200,3000, 1800,4000, 5500, 14000,1],  // XL — rare
-] as const;
-
-function pickSize(): [number, number, number, number, number, number] {
-  const totalWeight = SIZE_BUCKETS.reduce((s, b) => s + b[6], 0);
-  let r = Math.random() * totalWeight;
-  for (const b of SIZE_BUCKETS) {
-    r -= b[6];
-    if (r <= 0) return [b[0], b[1], b[2], b[3], b[4], b[5]];
-  }
-  return [SIZE_BUCKETS[2][0], SIZE_BUCKETS[2][1], SIZE_BUCKETS[2][2], SIZE_BUCKETS[2][3], SIZE_BUCKETS[2][4], SIZE_BUCKETS[2][5]];
-}
-
-function buildBgTraces(): BackgroundTrace[] {
-  const traces: BackgroundTrace[] = [];
-  // Days 14-29: lower volume (older history)
-  for (let d = 29; d >= 14; d--) {
-    const count = randInt(1, 4);
-    for (let i = 0; i < count; i++) {
-      const m = BG_MODELS[randInt(0, BG_MODELS.length - 1)]!;
-      const [inMin, inMax, outMin, outMax, durMin, durMax] = pickSize();
-      traces.push({
-        ...m,
-        daysAgoOffset: d,
-        inputTokens:  randInt(inMin,  inMax),
-        outputTokens: randInt(outMin, outMax),
-        durationMs:   randInt(durMin, durMax),
+        response: {
+          id: anthropicId(), type: "message", role: "assistant", model, stop_reason: "end_turn", stop_sequence: null,
+          content: [{ type: "text", text: c.a }],
+          usage: { input_tokens: randInt(380, 720), output_tokens: randInt(60, 180), cache_read_input_tokens: 1310, cache_creation_input_tokens: 0 },
+        },
+        timestamp,
+        durationMs: model === "claude-haiku-4-5" ? randInt(700, 1600) : randInt(1500, 4200),
       });
+      return;
+    }
+    case "handbook": {
+      const h = pick(HANDBOOK_QUESTIONS);
+      const cold = Math.random() < 0.15; // first question after the 5-min cache expired
+      await ingestAnthropic(ctx, {
+        request: {
+          model: "claude-haiku-4-5", max_tokens: 600, temperature: 0,
+          system: [{ type: "text", text: HANDBOOK_SYSTEM, cache_control: { type: "ephemeral" } }],
+          messages: [{ role: "user", content: h.q }],
+        },
+        response: {
+          id: anthropicId(), type: "message", role: "assistant", model: "claude-haiku-4-5", stop_reason: "end_turn", stop_sequence: null,
+          content: [{ type: "text", text: h.a }],
+          usage: cold
+            ? { input_tokens: randInt(40, 70), output_tokens: randInt(40, 110), cache_read_input_tokens: 0, cache_creation_input_tokens: 1138 }
+            : { input_tokens: randInt(40, 70), output_tokens: randInt(40, 110), cache_read_input_tokens: 1138, cache_creation_input_tokens: 0 },
+        },
+        timestamp,
+        durationMs: cold ? randInt(1200, 2100) : randInt(450, 1100),
+      });
+      return;
+    }
+    case "ticket": {
+      const text = pick(TICKETS);
+      await ingestOpenAI(ctx, {
+        request: { model: "gpt-4o-mini", temperature: 0, max_tokens: 200, messages: [
+          { role: "system", content: "Classify the support ticket. Reply with JSON: {category, urgency, sentiment}." },
+          { role: "user", content: text },
+        ] },
+        response: {
+          id: openaiId(), object: "chat.completion", created: Math.floor(timestamp / 1000), model: "gpt-4o-mini",
+          choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: JSON.stringify({
+            category: text.includes("DPA") ? "legal" : text.includes("API") ? "question" : text.includes("Love") ? "feedback" : "bug",
+            urgency: text.includes("wrong") || text.includes("redirect") ? "high" : "normal",
+            sentiment: text.includes("Love") ? "positive" : text.includes("wrong") ? "negative" : "neutral",
+          }) } }],
+          usage: tokens(randInt(55, 90), randInt(18, 30)),
+        },
+        timestamp,
+        durationMs: randInt(280, 900),
+      });
+      return;
+    }
+    case "code": {
+      const c = pick(CODE_QUESTIONS);
+      await ingestAnthropic(ctx, {
+        request: { model: "claude-sonnet-4-6", max_tokens: 1024, system: "You are a senior engineer helping teammates. Be direct; show code when it helps.", messages: [{ role: "user", content: c.q }] },
+        response: {
+          id: anthropicId(), type: "message", role: "assistant", model: "claude-sonnet-4-6", stop_reason: "end_turn", stop_sequence: null,
+          content: [{ type: "text", text: c.a }],
+          usage: { input_tokens: randInt(40, 120), output_tokens: randInt(90, 260) },
+        },
+        timestamp,
+        durationMs: randInt(1800, 5200),
+      });
+      return;
+    }
+    case "summary": {
+      const prompt = pick(SUMMARIES);
+      const slow = Math.random() < 0.1;
+      await ingestVercel(ctx, {
+        type: "ai.streamText", operationId: vercelId(), model: "gpt-4o-mini", provider: "openai.chat",
+        timestamp, durationMs: slow ? randInt(6000, 11000) : randInt(1100, 3200),
+        input: { system: "Summarise for busy readers: short bullets, concrete numbers, no filler.", prompt: `${prompt}\n\n[${randInt(1, 9)},${randInt(100, 999)} words of source text]` },
+        output: { finishReason: "stop", text: "- Main theme: reporting speed - 4 of 9 customers mentioned slow exports.\n- Most requested: scheduled exports to S3 (shipping in v2.4).\n- One churn risk: Initech, waiting on Okta SSO." },
+        usage: vercelTokens(randInt(900, 3200), randInt(60, 160)),
+      });
+      return;
     }
   }
-  // Days 1-13: heavier volume (recent activity)
-  for (let d = 13; d >= 1; d--) {
-    const count = randInt(3, 9);
-    for (let i = 0; i < count; i++) {
-      const m = BG_MODELS[randInt(0, BG_MODELS.length - 1)]!;
-      const [inMin, inMax, outMin, outMax, durMin, durMax] = pickSize();
-      traces.push({
-        ...m,
-        daysAgoOffset: d,
-        inputTokens:  randInt(inMin,  inMax),
-        outputTokens: randInt(outMin, outMax),
-        durationMs:   randInt(durMin, durMax),
-      });
-    }
-  }
-  return traces;
 }
 
-const BG_PROMPTS = [
-  "Summarize this paragraph in one sentence.",
-  "Convert this JSON to TypeScript interfaces.",
-  "Fix the syntax error in this function.",
-  "Write a unit test for this module.",
-  "Explain what this regex does.",
-  "Translate this message to French.",
-  "Suggest a better variable name for 'x'.",
-  "What's the time complexity of this algorithm?",
-  "Rewrite this loop using Array.map.",
-  "Generate a commit message for these changes.",
-  "What are the tradeoffs between SQL and NoSQL for this use case?",
-  "Review this pull request description for clarity.",
-  "Write JSDoc for this function.",
-  "Is this TypeScript type correct? Explain why.",
-  "What does this shell one-liner do step by step?",
-];
-
-const BG_RESPONSES = [
-  "The paragraph describes how microservices architecture decomposes a monolithic application into independently deployable services that communicate over well-defined APIs.",
-  "```typescript\ninterface User {\n  id: number;\n  name: string;\n  email: string;\n  role: 'admin' | 'viewer';\n  createdAt: string;\n}\n\ninterface ApiResponse<T> {\n  data: T;\n  total: number;\n  page: number;\n}\n```",
-  "The issue is a missing closing parenthesis on line 4. Here's the corrected version:\n\n```js\nfunction greet(name) {\n  return `Hello, ${name}!`;\n}\n```",
-  "```typescript\nimport { describe, it, expect } from 'vitest';\nimport { formatCurrency } from './format';\n\ndescribe('formatCurrency', () => {\n  it('formats positive numbers', () => {\n    expect(formatCurrency(1234.5)).toBe('$1,234.50');\n  });\n  it('formats zero', () => {\n    expect(formatCurrency(0)).toBe('$0.00');\n  });\n});\n```",
-  "The pattern `/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$/` validates email addresses: `^` anchors the start, `[a-zA-Z0-9._%+-]+` matches the local part, `@` is literal, `[a-zA-Z0-9.-]+` matches the domain, `\\.` is a literal dot, and `[a-zA-Z]{2,}$` requires a TLD of at least two characters.",
-  "Voici la traduction :\n\n**Anglais :** The deployment pipeline has been updated to include automated security scanning.\n\n**Français :** Le pipeline de déploiement a été mis à jour pour inclure une analyse de sécurité automatisée.",
-  "Without more context, here are the most common options:\n- `index` / `idx` — loop counter\n- `count` — accumulating a total\n- `offset` — a byte or array position\n- `value` / `result` — a computed result\n\nPick the name that describes *what* the variable holds, not its type.",
-  "The algorithm has **O(n²)** time complexity. The outer loop runs n times and for each iteration the inner loop also runs up to n times, giving n × n total operations. Space complexity is O(1) since no additional data structures are allocated.",
-  "```typescript\n// Before\nconst results = [];\nfor (let i = 0; i < items.length; i++) {\n  results.push(items[i].value * 2);\n}\n\n// After\nconst results = items.map(item => item.value * 2);\n```\n\n`Array.map` expresses intent more clearly and avoids the mutable accumulator.",
-  "```\nfeat(auth): add refresh token rotation\n\nReplace single long-lived tokens with a short-lived access token (15 min)\nand a rotating refresh token (7 days). Each refresh invalidates the\nprevious token to prevent replay attacks.\n```",
-  "**SQL** (PostgreSQL, MySQL) gives you ACID transactions, enforced schema, and powerful JOINs — ideal when your data has clear relationships and consistency matters. **NoSQL** (MongoDB, DynamoDB) offers flexible schemas and horizontal write scaling — better for high-throughput or document-shaped data that varies per record. For relational user and order data, SQL is the safer default unless you're projecting write volumes beyond a single primary's capacity.",
-  "The description explains *what* changed but not *why*. Suggested improvements:\n1. **Motivation** — what problem does this fix or feature solve?\n2. **Testing** — manual steps or automated test added?\n3. **Screenshots** if the UI changed.\n\nAlso rename the title from 'Fix stuff' to something specific, e.g. `fix(cart): prevent double-submit on slow connections`.",
-  "```typescript\n/**\n * Formats a number as a localized currency string.\n *\n * @param amount - The numeric value to format.\n * @param currency - ISO 4217 currency code (default: `'USD'`).\n * @param locale - BCP 47 locale tag (default: `'en-US'`).\n * @returns A formatted string, e.g. `'$1,234.56'`.\n */\nfunction formatCurrency(amount: number, currency = 'USD', locale = 'en-US'): string {\n  return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(amount);\n}\n```",
-  "`Record<string, string | undefined>` is structurally correct for an object with optional string values, but TypeScript won't warn when you access a missing key unless you enable `noUncheckedIndexedAccess`. Use `Partial<Record<string, string>>` for explicit intent, or define a concrete interface if the key set is known at compile time.",
-  "```bash\nfind . -name '*.log' | xargs grep -l 'ERROR' | xargs rm\n```\n1. `find . -name '*.log'` — recursively lists all `.log` files under the current directory\n2. `xargs grep -l 'ERROR'` — filters to only filenames that contain the string `ERROR`\n3. `xargs rm` — deletes those files\n\n⚠️ This permanently deletes files. Run with `echo` instead of `rm` first to preview.",
-];
-
-async function seedLast24hTraces(api: DemoApiCall): Promise<number> {
-  let count = 0;
+async function seedBackground(ctx: DemoSeedContext): Promise<void> {
+  // 29 days of history; weekdays busier than weekends, slight growth towards today
+  for (let d = 29; d >= 1; d--) {
+    const day = new Date(ago(d * DAY));
+    const weekend = day.getUTCDay() === 0 || day.getUTCDay() === 6;
+    const perDay = weekend ? randInt(1, 3) : randInt(3, 5) + Math.round((29 - d) / 12);
+    for (let i = 0; i < perDay; i++) {
+      await seedBackgroundTrace(ctx, ago(d * DAY + randInt(0, 23 * HOUR)));
+    }
+  }
+  // last 24 hours, hour by hour, for the 24h dashboard view
   for (let h = 23; h >= 0; h--) {
-    const perHour = randInt(1, 5);
+    const perHour = h >= 1 && h <= 7 ? randInt(0, 1) : randInt(1, 3);
     for (let i = 0; i < perHour; i++) {
-      const m = BG_MODELS[randInt(0, BG_MODELS.length - 1)]!;
-      const pi = randInt(0, BG_PROMPTS.length - 1);
-      const prompt = BG_PROMPTS[pi]!;
-      const reply = BG_RESPONSES[pi]!;
-      const ts = hoursAgo(h + Math.random());
-      const [inMin, inMax, outMin, outMax, durMin, durMax] = pickSize();
-      const inp = randInt(inMin, inMax), out = randInt(outMin, outMax), dur = randInt(durMin, durMax);
-      if (m.provider === "anthropic") {
-        await seedAnthropic(api, {
-          request: { model: m.model, messages: [{ role: "user", content: prompt }], max_tokens: 512 },
-          response: {
-            id: `msg_${uid()}`, type: "message", role: "assistant",
-            content: [{ type: "text", text: reply }],
-            model: m.model, stop_reason: "end_turn", stop_sequence: null,
-            usage: { input_tokens: inp, output_tokens: out },
-          },
-          timestamp: ts, durationMs: dur,
-        });
-      } else {
-        await seedOpenAI(api, {
-          request: { model: m.model, messages: [{ role: "user", content: prompt }], max_tokens: 512 },
-          response: {
-            id: `chatcmpl_${uid()}`, object: "chat.completion",
-            created: Math.floor(Date.now() / 1000), model: m.model,
-            choices: [{ index: 0, message: { role: "assistant", content: reply }, finish_reason: "stop" }],
-            usage: { prompt_tokens: inp, completion_tokens: out, total_tokens: inp + out },
-          },
-          timestamp: ts, durationMs: dur,
-        });
-      }
-      count++;
+      await seedBackgroundTrace(ctx, ago(h * HOUR + randInt(1, 59) * MIN));
     }
   }
-  return count;
 }
 
-async function seedBackgroundTraces(api: DemoApiCall): Promise<number> {
-  const items = buildBgTraces();
-  let count = 0;
-  for (const t of items) {
-    const pi = randInt(0, BG_PROMPTS.length - 1);
-    const prompt = BG_PROMPTS[pi]!;
-    const reply = BG_RESPONSES[pi]!;
-    const ts = daysAgo(t.daysAgoOffset);
-    if (t.provider === "anthropic") {
-      await seedAnthropic(api, {
-        request: { model: t.model, messages: [{ role: "user", content: prompt }], max_tokens: 512 },
-        response: {
-          id: `msg_${uid()}`, type: "message", role: "assistant",
-          content: [{ type: "text", text: reply }],
-          model: t.model, stop_reason: "end_turn", stop_sequence: null,
-          usage: { input_tokens: t.inputTokens, output_tokens: t.outputTokens },
-        },
-        timestamp: ts, durationMs: t.durationMs,
-      });
-    } else {
-      await seedOpenAI(api, {
-        request: { model: t.model, messages: [{ role: "user", content: prompt }], max_tokens: 512 },
-        response: {
-          id: `chatcmpl_${uid()}`, object: "chat.completion",
-          created: Math.floor(Date.now() / 1000), model: t.model,
-          choices: [{ index: 0, message: { role: "assistant", content: reply }, finish_reason: "stop" }],
-          usage: { prompt_tokens: t.inputTokens, completion_tokens: t.outputTokens, total_tokens: t.inputTokens + t.outputTokens },
-        },
-        timestamp: ts, durationMs: t.durationMs,
-      });
-    }
-    count++;
-  }
-  return count;
-}
+// ── entry point ───────────────────────────────────────────────────────────────
 
-// Fills an empty demo account: showcase traces, 30-day background history, last-24h
-// hourly traffic, stars, notes and API keys. Org name/retention are set directly in
-// the DB by ensureDemoAccount (PATCH /orgs/me is blocked for the demo account).
-export async function seedDemoData(api: DemoApiCall): Promise<number> {
-  const { starred, noted } = await seedAllTraces(api);
-  const bgCount = await seedBackgroundTraces(api);
-  const h24Count = await seedLast24hTraces(api);
-  for (const id of starred) await starTrace(api, id);
-  for (const [id, body] of noted) await addNote(api, id, body);
-  // A re-seed after the traces were lost keeps the account's existing keys.
-  const keys = (await api("GET", "/keys")) as unknown[];
+// Fills an empty demo account: showcase traces (stars + notes), background traffic
+// and API keys. Org name/retention are set directly in the DB by ensureDemoAccount
+// (PATCH /orgs/me is blocked for the demo account).
+export async function seedDemoData(ctx: DemoSeedContext): Promise<void> {
+  const { starred, notes } = await seedShowcase(ctx);
+  await seedBackground(ctx);
+
+  for (const id of starred) await ctx.api("PATCH", `/traces/${id}`, { starred: true });
+  for (const [id, body] of notes) await ctx.api("POST", `/traces/${id}/notes`, { body });
+
+  // A re-seed keeps the account's existing keys.
+  const keys = (await ctx.api("GET", "/keys")) as unknown[];
   if (keys.length === 0) {
-    await api("POST", "/keys", { name: "production", env: "production", scopes: ["read", "write"] });
-    await api("POST", "/keys", { name: "staging", env: "staging", scopes: ["read", "write"] });
-    await api("POST", "/keys", { name: "ci", env: "ci", scopes: ["read"] });
+    await ctx.api("POST", "/keys", { name: "production", env: "production", scopes: ["read", "write"] });
+    await ctx.api("POST", "/keys", { name: "staging", env: "staging", scopes: ["read", "write"] });
+    await ctx.api("POST", "/keys", { name: "ci", env: "ci", scopes: ["read"] });
   }
-  return starred.length + noted.length + bgCount + h24Count;
 }
