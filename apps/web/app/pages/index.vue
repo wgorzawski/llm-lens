@@ -137,9 +137,11 @@ function handleRowClick(id: string, isCheckbox = false) {
 }
 
 const bulkError = ref<string | null>(null);
+const { blockedInDemo } = useDemoGuard();
 
 async function onRowMenuSelect(t: UnifiedTrace, action: string) {
   if (action === "delete") {
+    if (blockedInDemo()) return;
     try { await deleteOne(t.id); await fetchTraces(page.value.offset); }
     catch (err) { bulkError.value = getErrorMessage(err); }
   } else if (action === "star") {
@@ -152,6 +154,7 @@ async function onRowMenuSelect(t: UnifiedTrace, action: string) {
 
 async function deleteSelected() {
   bulkError.value = null;
+  if (blockedInDemo()) return;
   try {
     await deleteMany([...selected.value]);
     selected.value = new Set();

@@ -42,8 +42,11 @@ function onDiff() {
   navigateTo(`/?select=${id}`);
 }
 
+const { blockedInDemo } = useDemoGuard();
+
 async function onMenuSelect(action: string) {
   if (action === "delete") {
+    if (blockedInDemo()) return;
     deleting.value = true;
     actionError.value = null;
     try {

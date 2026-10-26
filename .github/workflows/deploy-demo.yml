@@ -73,7 +73,9 @@ jobs:
         run: |
           cat > /tmp/api.env << EOF
           JWT_SECRET=${{ secrets.DEMO_JWT_SECRET }}
-          DATABASE_URL=file:./demo.db
+          DATABASE_URL=file:/home/mikrus/llm-lens-prod/data/demo.db
+          UPLOADS_DIR=/home/mikrus/llm-lens-prod/data/uploads
+          DEMO_MODE=true
           PORT=3032
           API_URL=http://localhost:3032
           FRONTEND_URL=http://localhost:3031
@@ -122,6 +124,19 @@ jobs:
           script: |
             DEPLOY_DIR=/home/mikrus/llm-lens-prod
 
+            # Baza i uploady żyją w $DEPLOY_DIR/data, POZA apps/ - apps/ jest
+            # kasowane przy każdym deployu, a wcześniej leżała tam demo.db, więc
+            # każdy deploy bez seed=true zostawiał puste demo. Jednorazowa
+            # migracja: przenieś starą bazę, jeśli jeszcze tu jest.
+            mkdir -p $DEPLOY_DIR/data/uploads
+            if [ -f $DEPLOY_DIR/apps/api/demo.db ] && [ ! -f $DEPLOY_DIR/data/demo.db ]; then
+              echo "→ migrating demo.db to $DEPLOY_DIR/data"
+              for f in $DEPLOY_DIR/apps/api/demo.db*; do mv "$f" $DEPLOY_DIR/data/; done
+            fi
+            if [ -d $DEPLOY_DIR/apps/api/uploads ]; then
+              cp -rn $DEPLOY_DIR/apps/api/uploads/. $DEPLOY_DIR/data/uploads/ 2>/dev/null || true
+            fi
+
             # Wyczyść stare apps/packages przed rozpakowaniem (tar nie usuwa
             # plików, których nie ma w nowym archiwum).
             rm -rf $DEPLOY_DIR/apps $DEPLOY_DIR/packages
@@ -132,18 +147,21 @@ jobs:
             cd $DEPLOY_DIR
             ./deploy.sh
 
-      # ── optional: re-seed database ────────────────────────────────────────
+      # ── seed database (idempotent; wipes first only when seed=true) ─────
+      # Runs on every deploy: seed-demo.ts skips if the demo user already has
+      # traces, so this only fills an empty database and never duplicates data.
       - name: Seed demo database
-        if: ${{ inputs.seed == true }}
         run: |
           $SSH_CMD bash -s << 'ENDSSH'
             set -e
             export NVM_DIR="$HOME/.nvm"
             [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
             cd /home/mikrus/llm-lens-prod
-            echo "→ wiping and re-seeding demo database"
-            rm -f apps/api/demo.db
-            pm2 restart llm-lens-api-prod
+            if [ "${{ inputs.seed }}" = "true" ]; then
+              echo "→ wiping demo database"
+              rm -f data/demo.db data/demo.db-*
+              pm2 restart llm-lens-api-prod
+            fi
             echo "→ waiting for API..."
             for i in $(seq 1 20); do
               curl -sf http://localhost:3032/health && break

@@ -20,8 +20,11 @@ const revealedRecoveryCodes = ref<string[] | null>(null);
 const disableCode = ref("");
 const showDisableForm = ref(false);
 
+const { blockedInDemo } = useDemoGuard();
+
 async function startTwoFactorSetup() {
   totpError.value = null;
+  if (blockedInDemo()) return;
   totpBusy.value = true;
   try {
     totpSetup.value = await setupTwoFactor();
@@ -85,6 +88,7 @@ const passwordSaved = ref(false);
 async function changePassword() {
   passwordError.value = null;
   passwordSaved.value = false;
+  if (blockedInDemo()) return;
   if (newPasswordInput.value !== confirmPasswordInput.value) {
     passwordError.value = "Passwords do not match";
     return;

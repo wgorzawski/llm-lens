@@ -5,6 +5,7 @@ const apiBase = useRuntimeConfig().public.apiBase as string;
 const { token } = useAuth();
 
 const orgSlug = computed(() => org.value?.slug ?? "");
+const { blockedInDemo } = useDemoGuard();
 
 // ── Transfer ownership ────────────────────────────────────────────────────────
 const showTransfer = ref(false);
@@ -106,7 +107,7 @@ async function doDelete() {
           <div class="danger-title">Transfer ownership</div>
           <div class="danger-sub">Hand the organization off to another admin. You'll be demoted to Member.</div>
         </div>
-        <button class="s-btn" @click="showTransfer = !showTransfer">Transfer…</button>
+        <button class="s-btn" @click="blockedInDemo() || (showTransfer = !showTransfer)">Transfer…</button>
       </div>
       <div v-if="showTransfer" class="danger-form">
         <div class="field-input"><input v-model="transferEmail" type="email" placeholder="new-owner@example.com" ></div>
@@ -124,7 +125,7 @@ async function doDelete() {
           <div class="danger-title">Wipe all traces</div>
           <div class="danger-sub">Delete every trace, replay, and annotation across all environments. Aggregates and keys are preserved.</div>
         </div>
-        <button class="s-btn danger" @click="showWipe = !showWipe">Wipe traces…</button>
+        <button class="s-btn danger" @click="blockedInDemo() || (showWipe = !showWipe)">Wipe traces…</button>
       </div>
       <div v-if="showWipe" class="danger-form">
         <div class="set-row-hint">Type <strong>{{ orgSlug }}</strong> to confirm.</div>
@@ -143,7 +144,7 @@ async function doDelete() {
           <div class="danger-title">Delete organization</div>
           <div class="danger-sub">Permanently delete {{ orgSlug }} and every member's access. This cannot be undone.</div>
         </div>
-        <button class="s-btn danger" @click="showDelete = !showDelete">Delete organization…</button>
+        <button class="s-btn danger" @click="blockedInDemo() || (showDelete = !showDelete)">Delete organization…</button>
       </div>
       <div v-if="showDelete" class="danger-form">
         <div class="set-row-hint">Type <strong>{{ orgSlug }}</strong> to confirm. All data will be permanently erased.</div>

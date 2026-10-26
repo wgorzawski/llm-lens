@@ -23,6 +23,7 @@ async function onRemoveAvatar() {
 
 // ── email change ──────────────────────────────────────────────────────────────
 const showEmailForm = ref(false);
+const { blockedInDemo } = useDemoGuard();
 const newEmail = ref("");
 const emailPassword = ref("");
 const savingEmail = ref(false);
@@ -135,7 +136,7 @@ async function saveProfile() {
         <div class="set-row-control" style="flex-direction:column;align-items:stretch;gap:8px">
           <div class="field-input">
             <input :value="me?.email" readonly class="mono" >
-            <span class="trail"><button class="link-btn" @click="showEmailForm = !showEmailForm">Change</button></span>
+            <span class="trail"><button class="link-btn" @click="blockedInDemo() || (showEmailForm = !showEmailForm)">Change</button></span>
           </div>
           <template v-if="showEmailForm">
             <div class="field-input"><input v-model="newEmail" type="email" placeholder="New email address" ></div>

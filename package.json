@@ -10,7 +10,7 @@
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
     "prepare": "husky",
-    "demo:api": "DATABASE_URL=file:./demo.db JWT_SECRET=demo-local-secret PORT=3032 AUTH_RATE_LIMIT_MAX=1000 pnpm --filter @llm-lens/api dev",
+    "demo:api": "DEMO_MODE=true DATABASE_URL=file:./demo.db JWT_SECRET=demo-local-secret PORT=3032 AUTH_RATE_LIMIT_MAX=1000 pnpm --filter @llm-lens/api dev",
     "demo:web": "NUXT_PUBLIC_API_BASE=http://localhost:3032/api NUXT_PUBLIC_DEMO_MODE=true NUXT_IGNORE_LOCK=1 pnpm --filter @llm-lens/web exec nuxt dev --port 3031",
     "demo:seed": "API_URL=http://localhost:3032 tsx scripts/seed-demo.ts",
     "demo": "concurrently -n api,web -c blue,green --kill-others-on-fail \"pnpm demo:api\" \"pnpm demo:web\""

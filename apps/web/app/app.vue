@@ -8,4 +8,5 @@ onMounted(apply);
   <NuxtLayout>
     <NuxtPage />
   </NuxtLayout>
+  <DemoNotice />
 </template>

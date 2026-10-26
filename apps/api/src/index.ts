@@ -21,7 +21,9 @@ import { AnalyticsController } from "./controllers/analytics.controller";
 import { findUserById } from "./db/users.repository";
 import { hashKey, findApiKeyByHash, touchApiKey } from "./db/api-keys.repository";
 import { enforceRetention } from "./services/retention";
-import { RETENTION_CHECK_INTERVAL_MS } from "./constants";
+import { refreshDemoTimestamps } from "./services/demo-refresh";
+import { isBlockedForDemoAccount } from "./services/demo-guard";
+import { RETENTION_CHECK_INTERVAL_MS, DEMO_REFRESH_INTERVAL_MS, DEMO_MIN_RETENTION_DAYS } from "./constants";
 
 declare module "fastify" {
   interface FastifyInstance {
@@ -102,6 +104,19 @@ server.addHook("preHandler", async (request, reply) => {
   await request.jwtVerify();
 });
 
+// In demo mode traces are kept "fresh" (shifted forward hourly), retention gets a
+// floor and the shared demo account can't run destructive actions, so the public
+// demo never ends up as an empty dashboard.
+const demoMode = process.env["DEMO_MODE"] === "true";
+
+if (demoMode) {
+  server.addHook("preHandler", async (request, reply) => {
+    if (isBlockedForDemoAccount(request.method, request.routeOptions.url, request.user?.email)) {
+      return reply.status(403).send({ error: "This action is disabled on the shared demo account" });
+    }
+  });
+}
+
 await server.register(bootstrap, {
   prefix: "/api",
   controllers: [
@@ -129,10 +144,15 @@ server.get("/health", async () => ({ status: "ok" }));
 
 await initDb();
 
-void enforceRetention().catch((err) => server.log.error(err));
+async function runMaintenance(): Promise<void> {
+  if (demoMode) await refreshDemoTimestamps();
+  await enforceRetention(demoMode ? DEMO_MIN_RETENTION_DAYS : 0);
+}
+
+void runMaintenance().catch((err) => server.log.error(err));
 setInterval(() => {
-  void enforceRetention().catch((err) => server.log.error(err));
-}, RETENTION_CHECK_INTERVAL_MS);
+  void runMaintenance().catch((err) => server.log.error(err));
+}, demoMode ? DEMO_REFRESH_INTERVAL_MS : RETENTION_CHECK_INTERVAL_MS);
 
 try {
   await server.listen({ port: parseInt(process.env["PORT"] ?? "3001"), host: "::" });
