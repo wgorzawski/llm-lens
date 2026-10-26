@@ -1,18 +1,9 @@
-/**
- * Demo seed script — populates a fresh LLM Lens instance with realistic demo data.
- * Idempotent: skips seeding if traces already exist.
- *
- * Usage:
- *   API_URL=http://localhost:3032 tsx scripts/seed-demo.ts
- */
+// Demo seed data. Used by the API itself in DEMO_MODE (services/demo-maintenance.ts)
+// to refill the shared demo account whenever it has no traces - so the public demo
+// heals itself instead of depending on a manual re-seed. Calls go through the real
+// API routes (via server.inject), so traces are parsed exactly like real ingests.
 
-const API_URL = (process.env["API_URL"] ?? "http://localhost:3032").replace(/\/$/, "");
-const BASE = `${API_URL}/api`;
-
-const DEMO_EMAIL = "demo@llmlens.dev";
-const DEMO_PASSWORD = "demo1234";
-
-// ── helpers ───────────────────────────────────────────────────────────────────
+export type DemoApiCall = (method: string, path: string, body?: unknown) => Promise<unknown>;
 
 function daysAgo(d: number): string {
   return new Date(Date.now() - d * 24 * 60 * 60 * 1000).toISOString();
@@ -20,52 +11,6 @@ function daysAgo(d: number): string {
 
 function hoursAgo(h: number): string {
   return new Date(Date.now() - h * 60 * 60 * 1000).toISOString();
-}
-
-async function api(
-  method: string,
-  path: string,
-  body?: unknown,
-  token?: string,
-): Promise<unknown> {
-  const res = await fetch(`${BASE}${path}`, {
-    method,
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  if (!res.ok && res.status !== 409) {
-    const text = await res.text();
-    throw new Error(`${method} ${path} → ${res.status}: ${text}`);
-  }
-  const text = await res.text();
-  return text ? JSON.parse(text) : null;
-}
-
-// ── auth ──────────────────────────────────────────────────────────────────────
-
-async function registerOrLogin(): Promise<string> {
-  try {
-    const res = await fetch(`${BASE}/auth/register`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: DEMO_EMAIL, password: DEMO_PASSWORD }),
-    });
-    if (res.ok) {
-      const data = (await res.json()) as { token: string };
-      console.log("  ✓ Registered demo user");
-      return data.token;
-    }
-  } catch {}
-
-  const data = (await api("POST", "/auth/login", {
-    email: DEMO_EMAIL,
-    password: DEMO_PASSWORD,
-  })) as { token: string };
-  console.log("  ✓ Logged in as demo user");
-  return data.token;
 }
 
 // ── trace seeders ─────────────────────────────────────────────────────────────
@@ -123,22 +68,22 @@ function randInt(min: number, max: number) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-async function seedAnthropic(token: string, p: AnthropicPayload): Promise<string> {
-  const data = (await api("POST", "/traces/anthropic", p, token)) as { id: string };
+async function seedAnthropic(api: DemoApiCall, p: AnthropicPayload): Promise<string> {
+  const data = (await api("POST", "/traces/anthropic", p)) as { id: string };
   return data.id;
 }
 
-async function seedOpenAI(token: string, p: OpenAIPayload): Promise<string> {
-  const data = (await api("POST", "/traces/openai", p, token)) as { id: string };
+async function seedOpenAI(api: DemoApiCall, p: OpenAIPayload): Promise<string> {
+  const data = (await api("POST", "/traces/openai", p)) as { id: string };
   return data.id;
 }
 
-async function starTrace(token: string, id: string) {
-  await api("PATCH", `/traces/${id}`, { starred: true }, token);
+async function starTrace(api: DemoApiCall, id: string) {
+  await api("PATCH", `/traces/${id}`, { starred: true });
 }
 
-async function addNote(token: string, id: string, body: string) {
-  await api("POST", `/traces/${id}/notes`, { body }, token);
+async function addNote(api: DemoApiCall, id: string, body: string) {
+  await api("POST", `/traces/${id}/notes`, { body });
 }
 
 // ── trace definitions ─────────────────────────────────────────────────────────
@@ -149,14 +94,14 @@ async function addNote(token: string, id: string, body: string) {
 //   L   : 350-900  /  500-1200  / 1800-4500ms
 //   XL  : 900-3000 / 1200-4000  / 4500-12000ms
 
-async function seedAllTraces(token: string): Promise<{ starred: string[]; noted: Array<[string, string]> }> {
+async function seedAllTraces(api: DemoApiCall): Promise<{ starred: string[]; noted: Array<[string, string]> }> {
   const starred: string[] = [];
   const noted: Array<[string, string]> = [];
 
   // ══ XS — tiny, one-shot ══════════════════════════════════════════════════════
 
   // XS-1. Translate a phrase — haiku, <150ms, 2d ago
-  await seedAnthropic(token, {
+  await seedAnthropic(api, {
     request: {
       model: "claude-haiku-4-5",
       messages: [{ role: "user", content: "Translate 'The deployment is complete.' into Polish, German, and French." }],
@@ -172,7 +117,7 @@ async function seedAllTraces(token: string): Promise<{ starred: string[]; noted:
   });
 
   // XS-2. One-liner CSS centering — gpt-4o-mini, very fast, 3d ago
-  await seedOpenAI(token, {
+  await seedOpenAI(api, {
     request: {
       model: "gpt-4o-mini",
       messages: [{ role: "user", content: "How do I center a div both horizontally and vertically using CSS Grid in one line?" }],
@@ -188,7 +133,7 @@ async function seedAllTraces(token: string): Promise<{ starred: string[]; noted:
   });
 
   // XS-3. TL;DR — gpt-4o-mini, instant, 7d ago
-  await seedOpenAI(token, {
+  await seedOpenAI(api, {
     request: {
       model: "gpt-4o-mini",
       messages: [{ role: "user", content: "TL;DR in one sentence: The transformer architecture introduced self-attention mechanisms that allow models to weigh the relevance of different input tokens when generating each output token, enabling parallelization that RNNs couldn't achieve." }],
@@ -204,7 +149,7 @@ async function seedAllTraces(token: string): Promise<{ starred: string[]; noted:
   });
 
   // XS-4. Regex one-liner — haiku, 6d ago
-  await seedAnthropic(token, {
+  await seedAnthropic(api, {
     request: {
       model: "claude-haiku-4-5",
       messages: [{ role: "user", content: "Regex to validate email with subdomains and plus addressing?" }],
@@ -222,7 +167,7 @@ async function seedAllTraces(token: string): Promise<{ starred: string[]; noted:
   // ══ S — short, focused ═══════════════════════════════════════════════════════
 
   // S-1. Async/await explanation — haiku, 14h ago
-  const s1 = await seedAnthropic(token, {
+  const s1 = await seedAnthropic(api, {
     request: {
       model: "claude-haiku-4-5",
       messages: [{ role: "user", content: "Explain async/await in JavaScript with a concise practical example." }],
@@ -239,7 +184,7 @@ async function seedAllTraces(token: string): Promise<{ starred: string[]; noted:
   starred.push(s1);
 
   // S-2. SQL top-10 query — sonnet, 4d ago
-  const s2 = await seedAnthropic(token, {
+  const s2 = await seedAnthropic(api, {
     request: {
       model: "claude-sonnet-4-6",
       messages: [{ role: "user", content: "Write a SQL query to find the top 10 customers by total order value in the last 90 days, including their email and order count." }],
@@ -256,7 +201,7 @@ async function seedAllTraces(token: string): Promise<{ starred: string[]; noted:
   starred.push(s2);
 
   // S-3. TypeScript type vs interface — haiku with system prompt, 5d ago
-  await seedAnthropic(token, {
+  await seedAnthropic(api, {
     request: {
       model: "claude-haiku-4-5",
       system: "You are a senior TypeScript developer. Give precise, opinionated answers. No preamble.",
@@ -273,7 +218,7 @@ async function seedAllTraces(token: string): Promise<{ starred: string[]; noted:
   });
 
   // S-4. Email cold outreach — gpt-4o-mini, 2d ago
-  await seedOpenAI(token, {
+  await seedOpenAI(api, {
     request: {
       model: "gpt-4o-mini",
       messages: [{ role: "user", content: "Write a short cold outreach email for a B2B SaaS analytics product targeting CTOs of Series A startups. Keep it under 100 words." }],
@@ -289,7 +234,7 @@ async function seedAllTraces(token: string): Promise<{ starred: string[]; noted:
   });
 
   // S-5. Blog post outline — gpt-4o-mini, 8d ago
-  await seedOpenAI(token, {
+  await seedOpenAI(api, {
     request: {
       model: "gpt-4o-mini",
       messages: [{ role: "user", content: "Create a blog post outline for 'How to monitor LLM costs in production'. Target audience: backend engineers. 5 sections max." }],
@@ -307,7 +252,7 @@ async function seedAllTraces(token: string): Promise<{ starred: string[]; noted:
   // ══ M — medium, typical workload ═════════════════════════════════════════════
 
   // M-1. TypeScript debounce — sonnet, 2d ago
-  const m1 = await seedAnthropic(token, {
+  const m1 = await seedAnthropic(api, {
     request: {
       model: "claude-sonnet-4-6",
       messages: [{ role: "user", content: "Write a TypeScript utility function that debounces function calls. Include proper generic types, cancellation support, a flush method, and a usage example." }],
@@ -324,7 +269,7 @@ async function seedAllTraces(token: string): Promise<{ starred: string[]; noted:
   starred.push(m1);
 
   // M-2. Python sales script — sonnet, 2d ago
-  await seedAnthropic(token, {
+  await seedAnthropic(api, {
     request: {
       model: "claude-sonnet-4-6",
       messages: [{ role: "user", content: "Write a Python script that reads a CSV file of sales data (columns: date, product, quantity, price) and outputs a summary: total revenue per product, sorted descending, with a grand total." }],
@@ -340,7 +285,7 @@ async function seedAllTraces(token: string): Promise<{ starred: string[]; noted:
   });
 
   // M-3. Tool use — weather — sonnet, warn latency, 1d ago
-  const m3 = await seedAnthropic(token, {
+  const m3 = await seedAnthropic(api, {
     request: {
       model: "claude-sonnet-4-6",
       messages: [{ role: "user", content: "What's the current weather in Warsaw and Krakow? I need to decide which city to visit this weekend." }],
@@ -373,7 +318,7 @@ async function seedAllTraces(token: string): Promise<{ starred: string[]; noted:
   noted.push([m3, "Tool use: two parallel get_weather calls issued in a single response."]);
 
   // M-4. Multi-turn code review (Python SQL injection) — sonnet, 3d ago
-  const m4 = await seedAnthropic(token, {
+  const m4 = await seedAnthropic(api, {
     request: {
       model: "claude-sonnet-4-6",
       messages: [
@@ -395,7 +340,7 @@ async function seedAllTraces(token: string): Promise<{ starred: string[]; noted:
   noted.push([m4, "Good multi-turn code review — SQL injection + resource leak + None handling in one flow."]);
 
   // M-5. Vitest unit tests — haiku with system, 11d ago
-  await seedAnthropic(token, {
+  await seedAnthropic(api, {
     request: {
       model: "claude-haiku-4-5",
       system: "You write concise, well-structured unit tests. Use Vitest syntax. No preamble.",
@@ -412,7 +357,7 @@ async function seedAllTraces(token: string): Promise<{ starred: string[]; noted:
   });
 
   // M-6. React useEffect + AbortController — gpt-4o multi-turn, 4d ago
-  const m6 = await seedOpenAI(token, {
+  const m6 = await seedOpenAI(api, {
     request: {
       model: "gpt-4o-2024-08-06",
       messages: [
@@ -434,7 +379,7 @@ async function seedAllTraces(token: string): Promise<{ starred: string[]; noted:
   noted.push([m6, "AbortController pattern — great teaching example for React strict mode + cleanup."]);
 
   // M-7. SQL index optimization — gpt-4o, 5d ago
-  await seedOpenAI(token, {
+  await seedOpenAI(api, {
     request: {
       model: "gpt-4o-2024-08-06",
       messages: [{ role: "user", content: "This query is slow on a 10M-row table:\n\nSELECT * FROM orders WHERE status = 'pending' AND created_at > '2024-01-01'\n\nWhat indexes should I add and why?" }],
@@ -450,7 +395,7 @@ async function seedAllTraces(token: string): Promise<{ starred: string[]; noted:
   });
 
   // M-8. Docker multi-stage — gpt-4o, 13d ago
-  await seedOpenAI(token, {
+  await seedOpenAI(api, {
     request: {
       model: "gpt-4o-2024-08-06",
       messages: [{ role: "user", content: "Write a production-ready Dockerfile for a Node.js 22 API: multi-stage build, non-root user, minimal image size, health check." }],
@@ -468,7 +413,7 @@ async function seedAllTraces(token: string): Promise<{ starred: string[]; noted:
   // ══ L — large, complex, multi-turn ═══════════════════════════════════════════
 
   // L-1. SaaS business analysis — opus, 7d ago
-  const l1 = await seedAnthropic(token, {
+  const l1 = await seedAnthropic(api, {
     request: {
       model: "claude-opus-4-8",
       messages: [{ role: "user", content: "Analyze the following SaaS business model and identify the top 3 risks with concrete mitigation steps:\n\nContext:\n- Product: B2B analytics platform for mid-market (50–500 employees)\n- Pricing: $299/seat/month\n- GTM: outbound sales + PLG (competing motions)\n- ARR: $180k, 8 customers, ACV $22.5k\n- Team: 6 engineers, 1 sales rep, 1 CS manager\n- Burn: $120k/month, 18 months runway\n- NPS: 42 (based on 6 responses)\n- Churn: 0% so far, but cohort is < 9 months old\n\nBe specific about what to do, not just what the risks are." }],
@@ -485,7 +430,7 @@ async function seedAllTraces(token: string): Promise<{ starred: string[]; noted:
   noted.push([l1, "High latency for Opus with long output — expected. Good for latency breakdown demos."]);
 
   // L-2. Microservices architecture multi-turn — opus, 10d ago
-  const l2 = await seedAnthropic(token, {
+  const l2 = await seedAnthropic(api, {
     request: {
       model: "claude-opus-4-8",
       messages: [
@@ -509,7 +454,7 @@ async function seedAllTraces(token: string): Promise<{ starred: string[]; noted:
   noted.push([l2, "Deep microservices thread — outbox pattern with working Postgres + Node.js code."]);
 
   // L-3. pandas data analysis — gpt-4o multi-turn, 3d ago
-  const l3 = await seedOpenAI(token, {
+  const l3 = await seedOpenAI(api, {
     request: {
       model: "gpt-4o-2024-08-06",
       messages: [
@@ -532,7 +477,7 @@ async function seedAllTraces(token: string): Promise<{ starred: string[]; noted:
   starred.push(l3);
 
   // L-4. TypeScript fetchWithRetry review — gpt-4o, 9d ago
-  await seedOpenAI(token, {
+  await seedOpenAI(api, {
     request: {
       model: "gpt-4o-2024-08-06",
       messages: [
@@ -554,7 +499,7 @@ async function seedAllTraces(token: string): Promise<{ starred: string[]; noted:
   // ══ XL — very large, document-scale ══════════════════════════════════════════
 
   // XL-1. Distributed rate limiting spec — gpt-4o, 6d ago
-  const xl1 = await seedOpenAI(token, {
+  const xl1 = await seedOpenAI(api, {
     request: {
       model: "gpt-4o-2024-08-06",
       messages: [{ role: "user", content: "Write a comprehensive technical specification for a distributed rate limiting system. Requirements:\n- Handle 500k requests/second across 20 global regions\n- Sub-millisecond enforcement overhead per request\n- Eventual consistency with max 200ms staleness\n- Support multiple rate limit strategies: token bucket, sliding window, fixed window\n- Fail-open behavior during network partitions\n- Per-customer, per-endpoint, and global limits\n- Real-time observability (p99 enforcement latency, limit hit rate, regional counters)\n- Admin API for dynamic limit configuration without restart\n\nInclude: architecture overview, data structures, synchronization protocol, failure modes, deployment topology, and observability design. Be concrete — include pseudocode or data structure definitions where they clarify the design." }],
@@ -571,7 +516,7 @@ async function seedAllTraces(token: string): Promise<{ starred: string[]; noted:
   noted.push([xl1, "Very large output (1482 tokens, 9.8s) — good for latency + cost analysis in dashboard."]);
 
   // XL-2. Full code generation: auth middleware suite — sonnet, long system prompt, 1d ago
-  const xl2 = await seedAnthropic(token, {
+  const xl2 = await seedAnthropic(api, {
     request: {
       model: "claude-sonnet-4-6",
       system: "You are a senior backend engineer specializing in Node.js and TypeScript security patterns. You write production-grade code with full type coverage, comprehensive error handling, and inline documentation only where non-obvious. When generating code, include: the implementation, a test suite using Vitest, and a usage example. Follow these constraints: no external auth libraries (no passport, no auth0 SDK), use standard Node.js crypto module, all tokens are opaque random bytes encoded as base64url.",
@@ -583,7 +528,7 @@ async function seedAllTraces(token: string): Promise<{ starred: string[]; noted:
     },
     response: {
       id: `msg_${uid()}`, type: "message", role: "assistant",
-      content: [{ type: "text", text: "```typescript\n// session-store.ts\nimport { randomBytes } from 'node:crypto';\n\nexport interface SessionData {\n  userId: string;\n  createdAt: Date;\n  expiresAt: Date;\n  lastSeenAt: Date;\n}\n\nconst TTL_MS = 24 * 60 * 60 * 1000;     // 24h hard limit\nconst SLIDE_MS = 60 * 60 * 1000;         // 1h sliding window\n\nexport class SessionStore {\n  private sessions = new Map<string, SessionData>();\n  private cleanupTimer: NodeJS.Timeout;\n\n  constructor(cleanupIntervalMs = 5 * 60 * 1000) {\n    this.cleanupTimer = setInterval(() => this.evictExpired(), cleanupIntervalMs);\n    this.cleanupTimer.unref(); // don't keep process alive\n  }\n\n  createSession(userId: string): string {\n    const token = randomBytes(32).toString('base64url');\n    const now = new Date();\n    this.sessions.set(token, {\n      userId,\n      createdAt: now,\n      expiresAt: new Date(now.getTime() + TTL_MS),\n      lastSeenAt: now,\n    });\n    return token;\n  }\n\n  getSession(token: string): SessionData | null {\n    const session = this.sessions.get(token);\n    if (!session) return null;\n    const now = new Date();\n    // Expired: past hard TTL or past sliding window\n    if (now > session.expiresAt || now.getTime() - session.lastSeenAt.getTime() > SLIDE_MS) {\n      this.sessions.delete(token);\n      return null;\n    }\n    session.lastSeenAt = now;\n    return session;\n  }\n\n  destroySession(token: string): boolean {\n    return this.sessions.delete(token);\n  }\n\n  private evictExpired() {\n    const now = new Date();\n    for (const [token, session] of this.sessions) {\n      if (now > session.expiresAt || now.getTime() - session.lastSeenAt.getTime() > SLIDE_MS) {\n        this.sessions.delete(token);\n      }\n    }\n  }\n\n  destroy() {\n    clearInterval(this.cleanupTimer);\n    this.sessions.clear();\n  }\n\n  get size() { return this.sessions.size; }\n}\n```\n\n```typescript\n// session-plugin.ts\nimport type { FastifyPluginAsync, FastifyRequest } from 'fastify';\nimport fp from 'fastify-plugin';\nimport { SessionStore, type SessionData } from './session-store.js';\n\ndeclare module 'fastify' {\n  interface FastifyRequest {\n    session: SessionData | null;\n  }\n  interface FastifyInstance {\n    sessionStore: SessionStore;\n  }\n}\n\nconst COOKIE_NAME = 'sid';\n\nconst sessionPlugin: FastifyPluginAsync = async (fastify) => {\n  const store = new SessionStore();\n  fastify.decorate('sessionStore', store);\n  fastify.decorateRequest('session', null);\n\n  fastify.addHook('onClose', () => store.destroy());\n\n  fastify.addHook('preHandler', async (request: FastifyRequest, reply) => {\n    const token = request.cookies[COOKIE_NAME];\n    if (!token) { request.session = null; return; }\n    const session = store.getSession(token);\n    if (!session) {\n      reply.clearCookie(COOKIE_NAME);\n      request.session = null;\n    } else {\n      request.session = session;\n    }\n  });\n};\n\nexport default fp(sessionPlugin, { name: 'session' });\n\n// Helper to set the session cookie after login\nexport function setSessionCookie(reply: FastifyReply, token: string) {\n  reply.setCookie(COOKIE_NAME, token, {\n    httpOnly: true,\n    sameSite: 'strict',\n    path: '/',\n    maxAge: 24 * 60 * 60, // seconds\n  });\n}\n```\n\n```typescript\n// session-store.test.ts\nimport { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';\nimport { SessionStore } from './session-store.js';\n\ndescribe('SessionStore', () => {\n  let store: SessionStore;\n\n  beforeEach(() => { store = new SessionStore(Infinity); }); // disable auto-cleanup\n  afterEach(() => store.destroy());\n\n  it('creates a session and retrieves it', () => {\n    const token = store.createSession('user_1');\n    expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/); // 32 bytes base64url\n    const session = store.getSession(token);\n    expect(session?.userId).toBe('user_1');\n  });\n\n  it('updates lastSeenAt on each access', () => {\n    const token = store.createSession('user_1');\n    const first = store.getSession(token)!.lastSeenAt;\n    vi.advanceTimersByTime(1000);\n    const second = store.getSession(token)!.lastSeenAt;\n    expect(second.getTime()).toBeGreaterThan(first.getTime());\n  });\n\n  it('returns null for unknown tokens', () => {\n    expect(store.getSession('bogus')).toBeNull();\n  });\n\n  it('destroys a session', () => {\n    const token = store.createSession('user_1');\n    store.destroySession(token);\n    expect(store.getSession(token)).toBeNull();\n  });\n\n  it('expires session past 24h TTL', () => {\n    vi.useFakeTimers();\n    const token = store.createSession('user_1');\n    vi.advanceTimersByTime(25 * 60 * 60 * 1000);\n    expect(store.getSession(token)).toBeNull();\n    vi.useRealTimers();\n  });\n\n  it('expires session idle for more than 1h', () => {\n    vi.useFakeTimers();\n    const token = store.createSession('user_1');\n    vi.advanceTimersByTime(61 * 60 * 1000);\n    expect(store.getSession(token)).toBeNull();\n    vi.useRealTimers();\n  });\n\n  it('evictExpired removes stale sessions', () => {\n    vi.useFakeTimers();\n    store.createSession('user_1');\n    store.createSession('user_2');\n    vi.advanceTimersByTime(25 * 60 * 60 * 1000);\n    (store as unknown as { evictExpired(): void }).evictExpired();\n    expect(store.size).toBe(0);\n    vi.useRealTimers();\n  });\n});\n```\n\n```typescript\n// Usage in a Fastify app\nimport Fastify from 'fastify';\nimport cookie from '@fastify/cookie';\nimport sessionPlugin, { setSessionCookie } from './session-plugin.js';\n\nconst app = Fastify();\nawait app.register(cookie);\nawait app.register(sessionPlugin);\n\napp.post('/login', async (request, reply) => {\n  const { email, password } = request.body as { email: string; password: string };\n  const user = await verifyCredentials(email, password); // your logic\n  if (!user) return reply.status(401).send({ error: 'Invalid credentials' });\n  const token = app.sessionStore.createSession(user.id);\n  setSessionCookie(reply, token);\n  return { ok: true };\n});\n\napp.post('/logout', async (request, reply) => {\n  const token = request.cookies['sid'];\n  if (token) app.sessionStore.destroySession(token);\n  reply.clearCookie('sid');\n  return { ok: true };\n});\n\napp.get('/me', async (request, reply) => {\n  if (!request.session) return reply.status(401).send({ error: 'Unauthorized' });\n  return { userId: request.session.userId, lastSeenAt: request.session.lastSeenAt };\n});\n```" }],
+      content: [{ type: "text", text: "```typescript\n// session-store.ts\nimport { randomBytes } from 'node:crypto';\n\nexport interface SessionData {\n  userId: string;\n  createdAt: Date;\n  expiresAt: Date;\n  lastSeenAt: Date;\n}\n\nconst TTL_MS = 24 * 60 * 60 * 1000;     // 24h hard limit\nconst SLIDE_MS = 60 * 60 * 1000;         // 1h sliding window\n\nexport class SessionStore {\n  private sessions = new Map<string, SessionData>();\n  private cleanupTimer: NodeJS.Timeout;\n\n  constructor(cleanupIntervalMs = 5 * 60 * 1000) {\n    this.cleanupTimer = setInterval(() => this.evictExpired(), cleanupIntervalMs);\n    this.cleanupTimer.unref(); // don't keep process alive\n  }\n\n  createSession(userId: string): string {\n    const token = randomBytes(32).toString('base64url');\n    const now = new Date();\n    this.sessions.set(token, {\n      userId,\n      createdAt: now,\n      expiresAt: new Date(now.getTime() + TTL_MS),\n      lastSeenAt: now,\n    });\n    return token;\n  }\n\n  getSession(api: DemoApiCall): SessionData | null {\n    const session = this.sessions.get(token);\n    if (!session) return null;\n    const now = new Date();\n    // Expired: past hard TTL or past sliding window\n    if (now > session.expiresAt || now.getTime() - session.lastSeenAt.getTime() > SLIDE_MS) {\n      this.sessions.delete(token);\n      return null;\n    }\n    session.lastSeenAt = now;\n    return session;\n  }\n\n  destroySession(api: DemoApiCall): boolean {\n    return this.sessions.delete(token);\n  }\n\n  private evictExpired() {\n    const now = new Date();\n    for (const [token, session] of this.sessions) {\n      if (now > session.expiresAt || now.getTime() - session.lastSeenAt.getTime() > SLIDE_MS) {\n        this.sessions.delete(token);\n      }\n    }\n  }\n\n  destroy() {\n    clearInterval(this.cleanupTimer);\n    this.sessions.clear();\n  }\n\n  get size() { return this.sessions.size; }\n}\n```\n\n```typescript\n// session-plugin.ts\nimport type { FastifyPluginAsync, FastifyRequest } from 'fastify';\nimport fp from 'fastify-plugin';\nimport { SessionStore, type SessionData } from './session-store.js';\n\ndeclare module 'fastify' {\n  interface FastifyRequest {\n    session: SessionData | null;\n  }\n  interface FastifyInstance {\n    sessionStore: SessionStore;\n  }\n}\n\nconst COOKIE_NAME = 'sid';\n\nconst sessionPlugin: FastifyPluginAsync = async (fastify) => {\n  const store = new SessionStore();\n  fastify.decorate('sessionStore', store);\n  fastify.decorateRequest('session', null);\n\n  fastify.addHook('onClose', () => store.destroy());\n\n  fastify.addHook('preHandler', async (request: FastifyRequest, reply) => {\n    const token = request.cookies[COOKIE_NAME];\n    if (!token) { request.session = null; return; }\n    const session = store.getSession(token);\n    if (!session) {\n      reply.clearCookie(COOKIE_NAME);\n      request.session = null;\n    } else {\n      request.session = session;\n    }\n  });\n};\n\nexport default fp(sessionPlugin, { name: 'session' });\n\n// Helper to set the session cookie after login\nexport function setSessionCookie(reply: FastifyReply, api: DemoApiCall) {\n  reply.setCookie(COOKIE_NAME, token, {\n    httpOnly: true,\n    sameSite: 'strict',\n    path: '/',\n    maxAge: 24 * 60 * 60, // seconds\n  });\n}\n```\n\n```typescript\n// session-store.test.ts\nimport { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';\nimport { SessionStore } from './session-store.js';\n\ndescribe('SessionStore', () => {\n  let store: SessionStore;\n\n  beforeEach(() => { store = new SessionStore(Infinity); }); // disable auto-cleanup\n  afterEach(() => store.destroy());\n\n  it('creates a session and retrieves it', () => {\n    const token = store.createSession('user_1');\n    expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/); // 32 bytes base64url\n    const session = store.getSession(token);\n    expect(session?.userId).toBe('user_1');\n  });\n\n  it('updates lastSeenAt on each access', () => {\n    const token = store.createSession('user_1');\n    const first = store.getSession(token)!.lastSeenAt;\n    vi.advanceTimersByTime(1000);\n    const second = store.getSession(token)!.lastSeenAt;\n    expect(second.getTime()).toBeGreaterThan(first.getTime());\n  });\n\n  it('returns null for unknown tokens', () => {\n    expect(store.getSession('bogus')).toBeNull();\n  });\n\n  it('destroys a session', () => {\n    const token = store.createSession('user_1');\n    store.destroySession(token);\n    expect(store.getSession(token)).toBeNull();\n  });\n\n  it('expires session past 24h TTL', () => {\n    vi.useFakeTimers();\n    const token = store.createSession('user_1');\n    vi.advanceTimersByTime(25 * 60 * 60 * 1000);\n    expect(store.getSession(token)).toBeNull();\n    vi.useRealTimers();\n  });\n\n  it('expires session idle for more than 1h', () => {\n    vi.useFakeTimers();\n    const token = store.createSession('user_1');\n    vi.advanceTimersByTime(61 * 60 * 1000);\n    expect(store.getSession(token)).toBeNull();\n    vi.useRealTimers();\n  });\n\n  it('evictExpired removes stale sessions', () => {\n    vi.useFakeTimers();\n    store.createSession('user_1');\n    store.createSession('user_2');\n    vi.advanceTimersByTime(25 * 60 * 60 * 1000);\n    (store as unknown as { evictExpired(): void }).evictExpired();\n    expect(store.size).toBe(0);\n    vi.useRealTimers();\n  });\n});\n```\n\n```typescript\n// Usage in a Fastify app\nimport Fastify from 'fastify';\nimport cookie from '@fastify/cookie';\nimport sessionPlugin, { setSessionCookie } from './session-plugin.js';\n\nconst app = Fastify();\nawait app.register(cookie);\nawait app.register(sessionPlugin);\n\napp.post('/login', async (request, reply) => {\n  const { email, password } = request.body as { email: string; password: string };\n  const user = await verifyCredentials(email, password); // your logic\n  if (!user) return reply.status(401).send({ error: 'Invalid credentials' });\n  const token = app.sessionStore.createSession(user.id);\n  setSessionCookie(reply, token);\n  return { ok: true };\n});\n\napp.post('/logout', async (request, reply) => {\n  const token = request.cookies['sid'];\n  if (token) app.sessionStore.destroySession(token);\n  reply.clearCookie('sid');\n  return { ok: true };\n});\n\napp.get('/me', async (request, reply) => {\n  if (!request.session) return reply.status(401).send({ error: 'Unauthorized' });\n  return { userId: request.session.userId, lastSeenAt: request.session.lastSeenAt };\n});\n```" }],
       model: "claude-sonnet-4-6", stop_reason: "end_turn", stop_sequence: null,
       usage: { input_tokens: 612, output_tokens: 1688 },
     },
@@ -593,7 +538,7 @@ async function seedAllTraces(token: string): Promise<{ starred: string[]; noted:
   noted.push([xl2, "XL trace — long system prompt + complex code generation + tests. High input + output tokens."]);
 
   // XL-3. RAG document analysis — opus, 12d ago
-  const xl3 = await seedAnthropic(token, {
+  const xl3 = await seedAnthropic(api, {
     request: {
       model: "claude-opus-4-8",
       system: "You are a technical due diligence analyst. You analyze software architecture documents, engineering blog posts, and technical specs provided by acquisition targets. Your job is to identify technical risks, assess engineering quality, and provide an honest risk rating. Format: Risk level (Low/Medium/High/Critical), Executive summary (3 sentences), Detailed findings (bullet points per category), Red flags (if any), Recommended follow-up questions.",
@@ -728,7 +673,7 @@ const BG_RESPONSES = [
   "```bash\nfind . -name '*.log' | xargs grep -l 'ERROR' | xargs rm\n```\n1. `find . -name '*.log'` — recursively lists all `.log` files under the current directory\n2. `xargs grep -l 'ERROR'` — filters to only filenames that contain the string `ERROR`\n3. `xargs rm` — deletes those files\n\n⚠️ This permanently deletes files. Run with `echo` instead of `rm` first to preview.",
 ];
 
-async function seedLast24hTraces(token: string): Promise<number> {
+async function seedLast24hTraces(api: DemoApiCall): Promise<number> {
   let count = 0;
   for (let h = 23; h >= 0; h--) {
     const perHour = randInt(1, 5);
@@ -741,7 +686,7 @@ async function seedLast24hTraces(token: string): Promise<number> {
       const [inMin, inMax, outMin, outMax, durMin, durMax] = pickSize();
       const inp = randInt(inMin, inMax), out = randInt(outMin, outMax), dur = randInt(durMin, durMax);
       if (m.provider === "anthropic") {
-        await seedAnthropic(token, {
+        await seedAnthropic(api, {
           request: { model: m.model, messages: [{ role: "user", content: prompt }], max_tokens: 512 },
           response: {
             id: `msg_${uid()}`, type: "message", role: "assistant",
@@ -752,7 +697,7 @@ async function seedLast24hTraces(token: string): Promise<number> {
           timestamp: ts, durationMs: dur,
         });
       } else {
-        await seedOpenAI(token, {
+        await seedOpenAI(api, {
           request: { model: m.model, messages: [{ role: "user", content: prompt }], max_tokens: 512 },
           response: {
             id: `chatcmpl_${uid()}`, object: "chat.completion",
@@ -769,7 +714,7 @@ async function seedLast24hTraces(token: string): Promise<number> {
   return count;
 }
 
-async function seedBackgroundTraces(token: string): Promise<number> {
+async function seedBackgroundTraces(api: DemoApiCall): Promise<number> {
   const items = buildBgTraces();
   let count = 0;
   for (const t of items) {
@@ -778,7 +723,7 @@ async function seedBackgroundTraces(token: string): Promise<number> {
     const reply = BG_RESPONSES[pi]!;
     const ts = daysAgo(t.daysAgoOffset);
     if (t.provider === "anthropic") {
-      await seedAnthropic(token, {
+      await seedAnthropic(api, {
         request: { model: t.model, messages: [{ role: "user", content: prompt }], max_tokens: 512 },
         response: {
           id: `msg_${uid()}`, type: "message", role: "assistant",
@@ -789,7 +734,7 @@ async function seedBackgroundTraces(token: string): Promise<number> {
         timestamp: ts, durationMs: t.durationMs,
       });
     } else {
-      await seedOpenAI(token, {
+      await seedOpenAI(api, {
         request: { model: t.model, messages: [{ role: "user", content: prompt }], max_tokens: 512 },
         response: {
           id: `chatcmpl_${uid()}`, object: "chat.completion",
@@ -805,57 +750,21 @@ async function seedBackgroundTraces(token: string): Promise<number> {
   return count;
 }
 
-// ── main ──────────────────────────────────────────────────────────────────────
-
-async function main() {
-  console.log(`\n🌱 LLM Lens demo seed — ${BASE}\n`);
-
-  console.log("1. Auth");
-  const token = await registerOrLogin();
-
-  const existing = (await api("GET", "/traces?limit=1", undefined, token)) as { total: number };
-  if (existing.total > 0) {
-    console.log(`\n  ⚠  Database already has ${existing.total} traces — skipping seed.`);
-    console.log("  Delete the demo.db file and re-run to start fresh.\n");
-    process.exit(0);
+// Fills an empty demo account: showcase traces, 30-day background history, last-24h
+// hourly traffic, stars, notes and API keys. Org name/retention are set directly in
+// the DB by ensureDemoAccount (PATCH /orgs/me is blocked for the demo account).
+export async function seedDemoData(api: DemoApiCall): Promise<number> {
+  const { starred, noted } = await seedAllTraces(api);
+  const bgCount = await seedBackgroundTraces(api);
+  const h24Count = await seedLast24hTraces(api);
+  for (const id of starred) await starTrace(api, id);
+  for (const [id, body] of noted) await addNote(api, id, body);
+  // A re-seed after the traces were lost keeps the account's existing keys.
+  const keys = (await api("GET", "/keys")) as unknown[];
+  if (keys.length === 0) {
+    await api("POST", "/keys", { name: "production", env: "production", scopes: ["read", "write"] });
+    await api("POST", "/keys", { name: "staging", env: "staging", scopes: ["read", "write"] });
+    await api("POST", "/keys", { name: "ci", env: "ci", scopes: ["read"] });
   }
-
-  console.log("2. Org setup");
-  await api("PATCH", "/orgs/me", { name: "LLM Lens Demo", retentionDays: 30 }, token);
-  console.log("  ✓ Org name set, retention → 30 days");
-
-  console.log("3. Seeding showcase traces (XS/S/M/L/XL)");
-  const { starred, noted } = await seedAllTraces(token);
-  console.log(`  ✓ ${starred.length + noted.length} showcase traces created`);
-
-  console.log("4. Seeding background traces (30-day history)");
-  const bgCount = await seedBackgroundTraces(token);
-  console.log(`  ✓ ${bgCount} background traces created`);
-
-  console.log("5. Seeding last-24h hourly traces");
-  const h24Count = await seedLast24hTraces(token);
-  console.log(`  ✓ ${h24Count} last-24h traces created`);
-
-  console.log("6. Starring traces");
-  for (const id of starred) await starTrace(token, id);
-  console.log(`  ✓ ${starred.length} traces starred`);
-
-  console.log("7. Adding notes");
-  for (const [id, body] of noted) await addNote(token, id, body);
-  console.log(`  ✓ ${noted.length} notes added`);
-
-  console.log("8. Creating API keys");
-  await api("POST", "/keys", { name: "production", env: "production", scopes: ["read", "write"] }, token);
-  await api("POST", "/keys", { name: "staging",    env: "staging",    scopes: ["read", "write"] }, token);
-  await api("POST", "/keys", { name: "ci",         env: "ci",         scopes: ["read"] }, token);
-  console.log("  ✓ 3 API keys created (production, staging, ci)");
-
-  console.log(`\n✅ Demo ready at ${API_URL.replace("3032", "3031")}\n`);
-  console.log(`   Email:    ${DEMO_EMAIL}`);
-  console.log(`   Password: ${DEMO_PASSWORD}\n`);
+  return starred.length + noted.length + bgCount + h24Count;
 }
-
-main().catch((err) => {
-  console.error("\n❌ Seed failed:", err.message);
-  process.exit(1);
-});

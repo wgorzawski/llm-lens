@@ -1,9 +1,10 @@
+import { DEMO_EMAIL } from "../constants";
+
 // The public demo shares one login, so a single visitor could otherwise wipe the
 // data, delete the org, lock everyone out (password/email change, 2FA) or change
 // what every other visitor sees (org name, logo, avatar, members, API keys). These
 // routes are refused for the shared demo account only - accounts visitors register
 // themselves keep full functionality.
-const DEMO_EMAIL = (process.env["DEMO_EMAIL"] ?? "demo@llmlens.dev").toLowerCase();
 
 const BLOCKED_ROUTES = new Set([
   // data

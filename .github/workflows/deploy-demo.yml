@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       seed:
-        description: "Re-seed demo database (wipes existing data)"
+        description: "Wipe demo database (the API re-seeds it on startup)"
         required: false
         default: false
         type: boolean
@@ -95,7 +95,6 @@ jobs:
           tar czf repo.tar.gz \
             apps \
             packages \
-            scripts \
             deploy.sh \
             ecosystem.config.cjs \
             package.json \
@@ -147,10 +146,12 @@ jobs:
             cd $DEPLOY_DIR
             ./deploy.sh
 
-      # ── seed database (idempotent; wipes first only when seed=true) ─────
-      # Runs on every deploy: seed-demo.ts skips if the demo user already has
-      # traces, so this only fills an empty database and never duplicates data.
-      - name: Seed demo database
+      # ── verify demo data ──────────────────────────────────────────────────
+      # The API seeds and repairs the demo account by itself in DEMO_MODE (at startup
+      # and hourly - see apps/api/src/services/demo-maintenance.ts). seed=true only
+      # wipes the database first; this step then waits until the demo login works and
+      # has data, so a broken demo fails the deploy instead of going unnoticed.
+      - name: Verify demo data
         run: |
           $SSH_CMD bash -s << 'ENDSSH'
             set -e
@@ -162,12 +163,24 @@ jobs:
               rm -f data/demo.db data/demo.db-*
               pm2 restart llm-lens-api-prod
             fi
-            echo "→ waiting for API..."
-            for i in $(seq 1 20); do
-              curl -sf http://localhost:3032/health && break
-              sleep 2
+            echo "→ waiting for demo account with data..."
+            TOKEN=""
+            for i in $(seq 1 60); do
+              # log in only until we have a token - login is rate limited (10/min)
+              [ -n "$TOKEN" ] || TOKEN=$(curl -sf -X POST http://localhost:3032/api/auth/login \
+                -H 'content-type: application/json' \
+                -d '{"email":"demo@llmlens.dev","password":"demo1234"}' \
+                | sed -n 's/.*"token":"\([^"]*\)".*/\1/p' || true)
+              if [ -n "$TOKEN" ]; then
+                TOTAL=$(curl -sf "http://localhost:3032/api/traces?limit=1" -H "authorization: Bearer $TOKEN" \
+                  | sed -n 's/.*"total":\([0-9]*\).*/\1/p' || true)
+                if [ "${TOTAL:-0}" -ge 10 ]; then echo "✓ demo ready: $TOTAL traces"; exit 0; fi
+              fi
+              sleep 5
             done
-            API_URL=http://localhost:3032 npx tsx scripts/seed-demo.ts
+            echo "✗ demo account still has no data after 5 minutes"
+            pm2 logs llm-lens-api-prod --lines 50 --nostream || true
+            exit 1
           ENDSSH
 
       - name: Summary
