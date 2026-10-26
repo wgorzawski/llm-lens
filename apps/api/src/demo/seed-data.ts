@@ -9,7 +9,7 @@
 import type { AnthropicRawLog, OpenAIRawLog, TraceMessage, UnifiedTrace, VercelAIRawLog } from "@llm-lens/types";
 import { parseAnthropicLog } from "@llm-lens/parsers";
 
-export const DEMO_SEED_VERSION = 2;
+export const DEMO_SEED_VERSION = 3;
 
 export type DemoApiCall = (method: string, path: string, body?: unknown) => Promise<unknown>;
 
@@ -26,6 +26,9 @@ const HOUR = 60 * MIN;
 const DAY = 24 * HOUR;
 
 const ago = (ms: number): number => Date.now() - ms;
+// Showcase traces fill the last ~3 hours, newest = most impressive, so the first
+// page of the trace list shows them before any background traffic.
+const showcaseAt = (rank: number): number => ago(3 * MIN + rank * 11 * MIN);
 const isoDate = (ms: number): string => new Date(ms).toISOString().slice(0, 10);
 
 const ALPHANUM = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -260,7 +263,7 @@ async function seedShowcase(ctx: DemoSeedContext): Promise<Showcase> {
         content: [{ type: "text", text: "All sorted, Maya. Here's what happened and what I did:\n\n**What went wrong:** your card was charged $588.00 twice for the Pro plan (12 seats), five seconds apart. That's a duplicate on our side - most likely a retried payment request.\n\n**What I did:** refunded the duplicate charge (`ch_3QxT81Lk`) in full. Refund reference: **re_9LmN4tYw**.\n\n**When you'll see it:** usually 5-10 business days, depending on your bank. Your Pro subscription is untouched - all 12 seats stay active.\n\nIf the refund hasn't shown up after 10 business days, reply to this thread with the reference above and I'll chase it with our payment provider. Anything else I can help with?" }],
         usage: { input_tokens: 1846, output_tokens: 214, cache_read_input_tokens: 1310, cache_creation_input_tokens: 0 },
       },
-      timestamp: ago(2 * HOUR + 14 * MIN),
+      timestamp: showcaseAt(0),
       durationMs: 3920,
     });
     starred.push(id);
@@ -336,7 +339,7 @@ async function seedShowcase(ctx: DemoSeedContext): Promise<Showcase> {
         content: [{ type: "text", text: "Fixed - all 12 invoice tests pass.\n\n**Root cause:** customers created through the public API can exist without a billing address. `getInvoice` read `customer.billingAddress.country` unconditionally, so those invoices threw a `TypeError` and the route returned 500.\n\n**Fix** (`src/routes/invoices.ts`):\n- read the country with optional chaining and fall back to a 0% tax rate when it's missing;\n- add `taxEstimated: true` to the response in that case, so the dashboard can label the tax as an estimate instead of silently showing $0.\n\n**Worth a follow-up:** the invoice should probably not be finalised at all without a billing address - tax is legally required in several of our markets. I'd suggest blocking `POST /invoices/:id/finalize` until the address is set; happy to do that in a separate change." }],
         usage: { input_tokens: 2984, output_tokens: 1062, cache_read_input_tokens: 2240, cache_creation_input_tokens: 0 },
       },
-      timestamp: ago(1 * DAY + 3 * HOUR),
+      timestamp: showcaseAt(1),
       durationMs: 18740,
     });
     starred.push(id);
@@ -359,7 +362,7 @@ async function seedShowcase(ctx: DemoSeedContext): Promise<Showcase> {
         content: [{ type: "text", text: "Yes to both:\n\n- **Working from Lisbon:** allowed. You can work remotely from any non-restricted country for up to 90 days per calendar year [1], and Portugal isn't on the restricted list [2]. February and March together are 59 days (60 in a leap year), so you're within the limit. Let your manager and People Ops know at least 14 days before you leave, and keep the core hours of 13:00-16:00 CET [1] - Lisbon is one hour behind, so that's 12:00-15:00 local time.\n- **Home-office stipend:** it keeps being paid during temporary stays abroad - EUR 75 a month with your salary [3].\n\nIf the trip might run past 90 days, tell People Ops early: longer stays need a tax and immigration review [1]." }],
         usage: { input_tokens: 64, output_tokens: 231, cache_read_input_tokens: 1138, cache_creation_input_tokens: 0 },
       },
-      timestamp: ago(38 * MIN),
+      timestamp: showcaseAt(6),
       durationMs: 1180,
     });
     notes.push([id, "Prompt caching at work: the handbook is cached, so almost all input tokens are cache reads. Cost per question is a fraction of an uncached call."]);
@@ -416,7 +419,7 @@ async function seedShowcase(ctx: DemoSeedContext): Promise<Showcase> {
         } }],
         usage: { input_tokens: 1702, output_tokens: 341 },
       },
-      timestamp: ago(5 * HOUR + 22 * MIN),
+      timestamp: showcaseAt(2),
       durationMs: 4310,
     });
     starred.push(id);
@@ -446,11 +449,11 @@ async function seedShowcase(ctx: DemoSeedContext): Promise<Showcase> {
         ],
       },
       response: {
-        id: openaiId(), object: "chat.completion", created: Math.floor(ago(3 * HOUR) / 1000), model: "gpt-4o",
+        id: openaiId(), object: "chat.completion", created: Math.floor(showcaseAt(5) / 1000), model: "gpt-4o",
         choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: "**Weather in Kraków**\n- Thursday: 2-9 °C, cloudy, light rain from mid-afternoon - bring an umbrella for the evening.\n- Friday: 3-11 °C, sunny intervals but windy.\n\n**Direct flights KRK → AMS on Friday evening**\n| Flight | Departs | Arrives | Price |\n|---|---|---|---|\n| KL1998 | 18:05 | 20:20 | €164 (4 seats left) |\n| LO269 | 20:40 | 22:55 | €121 |\n\nIf the conference wraps up by 16:30, KL1998 is doable (the airport is ~30 min from the centre). LO269 is cheaper and gives you more buffer. Want me to hold a seat on either?" } }],
         usage: { prompt_tokens: 486, completion_tokens: 172, total_tokens: 658, prompt_tokens_details: { cached_tokens: 0 } },
       },
-      timestamp: ago(3 * HOUR + 5 * MIN),
+      timestamp: showcaseAt(5),
       durationMs: 2870,
     });
     starred.push(id);
@@ -464,11 +467,11 @@ async function seedShowcase(ctx: DemoSeedContext): Promise<Showcase> {
       messages: [{ role: "user", content: "Our job queue retries failed jobs with `delay = base * 2^attempt` (base = 2s, max 8 attempts) and all workers restarted at the same moment after an outage, so ~40k jobs retried in lockstep and hammered the database again. What's the minimal change to the retry formula that prevents this, and roughly how long is the worst-case total wait after the change?" }],
     },
     response: {
-      id: openaiId(), object: "chat.completion", created: Math.floor(ago(9 * HOUR) / 1000), model: "o3-mini",
+      id: openaiId(), object: "chat.completion", created: Math.floor(showcaseAt(10) / 1000), model: "o3-mini",
       choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: "**Minimal change: add jitter.** Use \"full jitter\" instead of a fixed delay:\n\n```ts\nconst cap = base * 2 ** attempt;          // same exponential envelope as today\nconst delay = Math.random() * cap;          // full jitter: uniform in [0, cap)\n```\n\nThe exponential envelope is fine; the problem is that every job waiting on attempt *n* wakes up at exactly the same moment. Full jitter spreads each wave uniformly across the whole window, so 40k jobs on attempt 5 (cap 64 s) arrive at ~625 jobs/s instead of all at once.\n\n**Worst-case total wait** (attempts 0-7, base 2 s):\n- today: 2 + 4 + ... + 256 = **510 s** (8.5 min), every time;\n- with full jitter: the same **510 s** upper bound, but the *expected* total is half of that, **~255 s**.\n\nTwo cheap additions worth considering: cap a single delay (e.g. 5 min) so later attempts don't grow unbounded if you raise the attempt limit, and add jitter to worker *startup* too - the restart itself was the synchronising event." } }],
       usage: { prompt_tokens: 118, completion_tokens: 2614, total_tokens: 2732, completion_tokens_details: { reasoning_tokens: 2240 } },
     },
-    timestamp: ago(9 * HOUR + 40 * MIN),
+    timestamp: showcaseAt(10),
     durationMs: 14260,
   });
 
@@ -486,11 +489,11 @@ async function seedShowcase(ctx: DemoSeedContext): Promise<Showcase> {
       ],
     },
     response: {
-      id: openaiId(), object: "chat.completion", created: Math.floor(ago(2 * DAY) / 1000), model: "gpt-4o",
+      id: openaiId(), object: "chat.completion", created: Math.floor(showcaseAt(11) / 1000), model: "gpt-4o",
       choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: "**Summary:** India's public spending on education stayed between roughly 3.1% and 3.9% of GDP from 2003 to 2021. It fell from about 3.6% in 2003 to 3.1% in 2006, recovered to 3.3% in 2009 and peaked at about 3.9% in 2012, then declined steadily to about 3.1% by 2021 - back to its 2006 low.\n\n**Things a reviewer might question:**\n1. **Truncated y-axis** - it starts at 3%, which makes a 0.8-point swing look dramatic. Say so in the caption or start the axis at 0.\n2. **Sparse data** - points are only every three years, so the 2012 \"peak\" may be a single high year rather than a trend.\n3. **No source or definition** - it isn't clear whether this is central government only or central + state spending, which changes the numbers considerably for India." } }],
       usage: { prompt_tokens: 1158, completion_tokens: 206, total_tokens: 1364 },
     },
-    timestamp: ago(2 * DAY + 4 * HOUR),
+    timestamp: showcaseAt(11),
     durationMs: 4120,
   });
 
@@ -502,7 +505,7 @@ async function seedShowcase(ctx: DemoSeedContext): Promise<Showcase> {
       operationId: vercelId(),
       model: "gpt-4o-mini",
       provider: "openai.chat",
-      timestamp: ago(52 * MIN),
+      timestamp: showcaseAt(7),
       durationMs: 2340,
       input: {
         system: "You are the shopping assistant for Stride, an online running store. Recommend at most 3 products, always with price and why it fits.",
@@ -531,7 +534,7 @@ async function seedShowcase(ctx: DemoSeedContext): Promise<Showcase> {
     operationId: vercelId(),
     model: "claude-haiku-4-5",
     provider: "anthropic.messages",
-    timestamp: ago(6 * HOUR + 48 * MIN),
+    timestamp: showcaseAt(13),
     durationMs: 860,
     input: {
       system: "Classify incoming support tickets. Respond with the JSON object only.",
@@ -551,7 +554,7 @@ async function seedShowcase(ctx: DemoSeedContext): Promise<Showcase> {
     operationId: vercelId(),
     model: "gpt-4o",
     provider: "openai.chat",
-    timestamp: ago(1 * DAY + 11 * HOUR),
+    timestamp: showcaseAt(14),
     durationMs: 9480,
     input: {
       system: "You write the Northwind engineering blog. Clear, concrete, no hype.",
@@ -570,7 +573,7 @@ async function seedShowcase(ctx: DemoSeedContext): Promise<Showcase> {
     const id = await insertErrorTrace(ctx, {
       provider: "anthropic",
       model: "claude-opus-4-8",
-      timestamp: ago(4 * HOUR + 31 * MIN),
+      timestamp: showcaseAt(12),
       durationMs: 412,
       statusCode: 429,
       error: "rate_limit_error: This request would exceed your organization's rate limit of 400,000 input tokens per minute (claude-opus-4-8). Please retry after 38 seconds.",
@@ -584,7 +587,7 @@ async function seedShowcase(ctx: DemoSeedContext): Promise<Showcase> {
   await insertErrorTrace(ctx, {
     provider: "openai",
     model: "gpt-4o",
-    timestamp: ago(3 * DAY + 2 * HOUR),
+    timestamp: showcaseAt(15),
     durationMs: 288,
     statusCode: 400,
     error: "context_length_exceeded: This model's maximum context length is 128000 tokens. However, your messages resulted in 141,203 tokens. Please reduce the length of the messages.",
@@ -617,7 +620,7 @@ Priya: Let's take it async - post the proposal in #growth and we decide there by
         content: [{ type: "text", text: "## Decisions\n- Ship pricing page **variant B** (annual pricing first) to all visitors: +18% annual sign-ups, monthly flat, ~4,200 users per variant.\n\n## Action items\n| Owner | Action | Due |\n|---|---|---|\n| Lena | Review Tom's CSV export fix (date filter timezone) | Today, 13:00 |\n| Tom | Deploy the CSV export fix after review; let Jonas (Acme) know | Today |\n| Sam | Roll out variant B to 100% | - |\n| Sam | Write up the pricing experiment for the all-hands | Thursday |\n| Lena | Post the onboarding email proposal (7 → 4 emails) in #growth | Before Friday |\n\n## Open questions\n- Cut the onboarding sequence from 7 to 4 emails? To be decided async in #growth **by Friday** so marketing can update the automation." }],
         usage: { input_tokens: 412, output_tokens: 226 },
       },
-      timestamp: ago(26 * HOUR),
+      timestamp: showcaseAt(4),
       durationMs: 5240,
     };
     const originalId = await ingestAnthropic(ctx, original);
@@ -630,7 +633,7 @@ Priya: Let's take it async - post the proposal in #growth and we decide there by
         content: [{ type: "text", text: "## Decisions\n- Roll out pricing variant B (annual first) to everyone - +18% annual sign-ups.\n\n## Action items\n- **Lena** - review CSV export fix, today 13:00\n- **Tom** - ship CSV export fix today\n- **Sam** - ship variant B; write-up for Thursday all-hands\n- **Lena** - post onboarding email proposal in #growth\n\n## Open questions\n- Reduce onboarding emails from 7 to 4? Decide in #growth by Friday." }],
         usage: { input_tokens: 412, output_tokens: 131 },
       },
-      timestamp: ago(25 * HOUR),
+      timestamp: showcaseAt(3),
       durationMs: 1390,
     });
     if (replay.success) {
@@ -649,11 +652,11 @@ Priya: Let's take it async - post the proposal in #growth and we decide there by
         { role: "user", content: input },
       ] },
       response: {
-        id: openaiId(), object: "chat.completion", created: Math.floor(ago(4 * DAY) / 1000), model: "gpt-4o-mini",
+        id: openaiId(), object: "chat.completion", created: Math.floor(showcaseAt(9) / 1000), model: "gpt-4o-mini",
         choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: "🚀 Exciting news! Version 2.4 is here and it's our biggest release yet!\n\nWe've been working incredibly hard to bring you some amazing new features that will totally transform the way you work with your data!\n\n✨ **Scheduled Exports** - Now you can automatically export your reports daily or weekly straight to S3 or your inbox! No more manual exports!\n\n⚡ **Lightning-Fast Dashboards** - Dashboards now load a whopping 40% faster!\n\n🔐 **Okta SSO** - Business plan customers can now log in with Okta for enterprise-grade security!\n\nWe can't wait for you to try it out! Let us know what you think! 🎉" } }],
         usage: { prompt_tokens: 58, completion_tokens: 156, total_tokens: 214 },
       },
-      timestamp: ago(4 * DAY + 2 * HOUR),
+      timestamp: showcaseAt(9),
       durationMs: 1910,
     });
     const v2 = await ingestOpenAI(ctx, {
@@ -662,15 +665,15 @@ Priya: Let's take it async - post the proposal in #growth and we decide there by
         { role: "user", content: input },
       ] },
       response: {
-        id: openaiId(), object: "chat.completion", created: Math.floor(ago(4 * DAY) / 1000), model: "gpt-4o-mini",
+        id: openaiId(), object: "chat.completion", created: Math.floor(showcaseAt(8) / 1000), model: "gpt-4o-mini",
         choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: "## v2.4: scheduled exports, faster dashboards, Okta SSO\n\n**Scheduled exports.** Any report can now be exported daily or weekly to an S3 bucket or by email. Set it up once under *Report → Export → Schedule*; failed deliveries are retried and show up in the audit log.\n\n**Faster dashboards.** Dashboards load about 40% faster on average, thanks to query batching and caching of unchanged widgets. Large dashboards benefit most.\n\n**Okta SSO (Business plan).** Admins can connect Okta under *Settings → Security*. SCIM provisioning follows in v2.5." } }],
         usage: { prompt_tokens: 84, completion_tokens: 128, total_tokens: 212 },
       },
-      timestamp: ago(4 * DAY + 1 * HOUR),
+      timestamp: showcaseAt(8),
       durationMs: 1650,
     });
     starred.push(v2);
-    notes.push([v2, "Prompt v2: audience + word limit + no emoji. Compare with the v1 trace above using Diff - v2 is what we ship."]);
+    notes.push([v2, "Prompt v2: audience + word limit + no emoji. Compare with the v1 trace just below it using Diff - v2 is what we ship."]);
   }
 
   // 15. Quick multi-turn chat - a fast, cheap call ─────────────────────────────
@@ -682,11 +685,11 @@ Priya: Let's take it async - post the proposal in #growth and we decide there by
       { role: "user", content: "And only customers whose latest order is older than 90 days?" },
     ] },
     response: {
-      id: openaiId(), object: "chat.completion", created: Math.floor(ago(14 * MIN) / 1000), model: "gpt-4o-mini",
+      id: openaiId(), object: "chat.completion", created: Math.floor(showcaseAt(16) / 1000), model: "gpt-4o-mini",
       choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: "Wrap it in a CTE and filter:\n\n```sql\nWITH latest AS (\n  SELECT DISTINCT ON (customer_id) customer_id, created_at\n  FROM orders\n  ORDER BY customer_id, created_at DESC\n)\nSELECT customer_id, created_at AS last_order_at\nFROM latest\nWHERE created_at < now() - interval '90 days';\n```\n\nAn index on `orders (customer_id, created_at DESC)` keeps this fast." } }],
       usage: { prompt_tokens: 104, completion_tokens: 98, total_tokens: 202 },
     },
-    timestamp: ago(14 * MIN),
+    timestamp: showcaseAt(16),
     durationMs: 640,
   });
 
@@ -869,9 +872,10 @@ async function seedBackground(ctx: DemoSeedContext): Promise<void> {
       await seedBackgroundTrace(ctx, ago(d * DAY + randInt(0, 23 * HOUR)));
     }
   }
-  // last 24 hours, hour by hour, for the 24h dashboard view
-  for (let h = 23; h >= 0; h--) {
-    const perHour = h >= 1 && h <= 7 ? randInt(0, 1) : randInt(1, 3);
+  // last 24 hours, hour by hour, for the 24h dashboard view - stops 4 hours ago,
+  // where the showcase traces take over (see showcaseAt)
+  for (let h = 23; h >= 4; h--) {
+    const perHour = h >= 4 && h <= 9 ? randInt(0, 1) : randInt(1, 3);
     for (let i = 0; i < perHour; i++) {
       await seedBackgroundTrace(ctx, ago(h * HOUR + randInt(1, 59) * MIN));
     }
