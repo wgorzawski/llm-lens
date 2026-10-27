@@ -26,6 +26,7 @@ import { isBlockedForDemoAccount } from "./services/demo-guard";
 import { bodyLimitBytes } from "./services/instance";
 import { runBackupIfDue, backupsEnabled } from "./services/backup";
 import { apiKeyRouteAllowed } from "./services/api-key-scopes";
+import { checkTokenPayload } from "./services/auth-tokens";
 import { RETENTION_CHECK_INTERVAL_MS, DEMO_REFRESH_INTERVAL_MS, DEMO_MIN_RETENTION_DAYS, BACKUP_CHECK_INTERVAL_MS } from "./constants";
 
 declare module "fastify" {
@@ -117,6 +118,8 @@ server.addHook("preHandler", async (request, reply) => {
   }
 
   await request.jwtVerify();
+  const tokenError = await checkTokenPayload(request.user);
+  if (tokenError) return reply.status(401).send({ error: tokenError });
 });
 
 // In demo mode traces are kept "fresh" (shifted forward hourly), retention gets a

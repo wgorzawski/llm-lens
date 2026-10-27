@@ -34,6 +34,14 @@ export function useAuth() {
   }
 
   function logout() {
+    // revoke the session on the server too, so the token stops working everywhere
+    const current = token.value;
+    if (current) {
+      void $fetch(`${apiBase}/sessions/current`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${current}` },
+      }).catch(() => { /* already signed out */ });
+    }
     token.value = null;
     useToast().success("Signed out");
     return navigateTo("/login");

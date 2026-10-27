@@ -243,12 +243,12 @@ function relativeTime(iso: string): string {
           <div class="session-main">
             <div class="session-device">
               {{ s.device }}
-              <span v-if="i === 0" class="kpill ok"><span class="dot ok" /> this device</span>
+              <span v-if="s.current ?? i === 0" class="kpill ok"><span class="dot ok" /> this device</span>
             </div>
             <div class="session-meta mono">{{ s.ip }} · {{ s.userAgent }}</div>
           </div>
           <div class="session-time mono">{{ relativeTime(s.lastActiveAt) }}</div>
-          <button v-if="i !== 0" class="icon-btn xs" title="Revoke" @click="onRevokeSession(s.id)">
+          <button v-if="!(s.current ?? i === 0)" class="icon-btn xs" title="Revoke" @click="onRevokeSession(s.id)">
             <AppIcon name="x" :size="12" />
           </button>
         </div>

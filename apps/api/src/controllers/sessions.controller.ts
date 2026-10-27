@@ -6,7 +6,15 @@ import { listSessions, deleteSession } from "../db/sessions.repository";
 export class SessionsController {
   @GET("/")
   async list(request: FastifyRequest) {
-    return listSessions(request.user.userId);
+    const sessions = await listSessions(request.user.userId);
+    return sessions.map((s) => ({ ...s, current: s.id === request.user.sid }));
+  }
+
+  /** Signs out the session the request was made with */
+  @DELETE("/current")
+  async revokeCurrent(request: FastifyRequest, reply: FastifyReply) {
+    if (request.user.sid) await deleteSession(request.user.sid, request.user.userId);
+    return reply.status(204).send();
   }
 
   @DELETE("/:id")

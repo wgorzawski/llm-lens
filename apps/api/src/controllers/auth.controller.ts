@@ -3,7 +3,7 @@ import type { FastifyReply, FastifyRequest } from "fastify";
 import bcrypt from "bcryptjs";
 import { createUser, hasAnyUser, findUserByEmail, findUserById, findOrCreateOAuthUser, consumeRecoveryCode } from "../db/users.repository";
 import { BCRYPT_ROUNDS, PENDING_2FA_TOKEN_TTL, OAUTH_FETCH_TIMEOUT_MS } from "../constants";
-import { createSession } from "../db/sessions.repository";
+import { issueSessionToken } from "../services/auth-tokens";
 import { verifyTotpCode, hashRecoveryCode } from "../services/totp";
 import { sendSigninAlert } from "../services/email";
 import { registrationEnabled } from "../services/instance";
@@ -23,17 +23,10 @@ async function mayRegister(email: string): Promise<boolean> {
 
 declare module "@fastify/jwt" {
   interface FastifyJWT {
-    user: { userId: string; email: string; pending2fa?: boolean; apiKeyEnv?: string };
+    user: { userId: string; email: string; pending2fa?: boolean; apiKeyEnv?: string; sid?: string; svc?: boolean };
   }
 }
 
-function deviceFromUserAgent(ua: string): string {
-  if (/iPhone/.test(ua)) return "iPhone";
-  if (/Macintosh/.test(ua)) return "Mac";
-  if (/Windows/.test(ua)) return "Windows PC";
-  if (/Linux/.test(ua)) return "Linux";
-  return "Unknown device";
-}
 
 const AUTH_RATE_LIMIT = {
   max: parseInt(process.env["AUTH_RATE_LIMIT_MAX"] ?? "10", 10),
@@ -73,10 +66,7 @@ export class AuthController {
     const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
     const user = await createUser(email, passwordHash);
 
-    const token = request.server.jwt.sign({ userId: user.id, email: user.email });
-    const ua = request.headers["user-agent"] ?? "unknown";
-    void createSession(user.id, deviceFromUserAgent(ua), request.ip, ua)
-      .catch((err: unknown) => request.server.log.warn({ err }, "Failed to create session"));
+    const token = await issueSessionToken(request, user);
     return reply.status(201).send({ token, user });
   }
 
@@ -109,13 +99,10 @@ export class AuthController {
       return { requiresTwoFactor: true, pendingToken };
     }
 
-    const token = request.server.jwt.sign({ userId: user.id, email: user.email });
-    const ua = request.headers["user-agent"] ?? "unknown";
-    void createSession(user.id, deviceFromUserAgent(ua), request.ip, ua)
-      .catch((err: unknown) => request.server.log.warn({ err }, "Failed to create session"));
+    const token = await issueSessionToken(request, user);
     const prefs: Record<string, unknown> = JSON.parse(user.preferences);
     if (prefs["signinAlerts"] !== false) {
-      void sendSigninAlert(user.email, request.ip, ua)
+      void sendSigninAlert(user.email, request.ip, request.headers["user-agent"] ?? "unknown")
         .catch((err: unknown) => request.server.log.warn({ err }, "Failed to send signin alert"));
     }
     return { token, user: { id: user.id, email: user.email } };
@@ -151,10 +138,7 @@ export class AuthController {
       return reply.status(401).send({ error: "Invalid code" });
     }
 
-    const token = request.server.jwt.sign({ userId: user.id, email: user.email });
-    const ua = request.headers["user-agent"] ?? "unknown";
-    void createSession(user.id, deviceFromUserAgent(ua), request.ip, ua)
-      .catch((err: unknown) => request.server.log.warn({ err }, "Failed to create session"));
+    const token = await issueSessionToken(request, user);
     return { token, user: { id: user.id, email: user.email } };
   }
 
@@ -177,7 +161,7 @@ export class AuthController {
       return reply.redirect(`${frontendUrl}/login?error=registration_closed`);
     }
     const user = await findOrCreateOAuthUser(profile.email, "google", profile.id);
-    const token = request.server.jwt.sign({ userId: user.id, email: user.email });
+    const token = await issueSessionToken(request, user);
     return reply.redirect(`${frontendUrl}/auth/callback?token=${token}`);
   }
 
@@ -212,7 +196,7 @@ export class AuthController {
       return reply.redirect(`${frontendUrl}/login?error=registration_closed`);
     }
     const user = await findOrCreateOAuthUser(email, "github", String(profile?.id));
-    const token = request.server.jwt.sign({ userId: user.id, email: user.email });
+    const token = await issueSessionToken(request, user);
     return reply.redirect(`${frontendUrl}/auth/callback?token=${token}`);
   }
 }

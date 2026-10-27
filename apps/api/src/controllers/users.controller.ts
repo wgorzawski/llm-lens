@@ -1,3 +1,4 @@
+import { deleteOtherSessions } from "../db/sessions.repository";
 import { Controller, GET, PATCH, POST, DELETE } from "fastify-decorators";
 import { BCRYPT_ROUNDS } from "../constants";
 import type { FastifyReply, FastifyRequest } from "fastify";
@@ -113,6 +114,8 @@ export class UsersController {
 
     const newHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
     await updatePasswordHash(user.id, newHash);
+    // a changed password signs out every other device
+    await deleteOtherSessions(user.id, request.user.sid);
     return reply.status(204).send();
   }
 

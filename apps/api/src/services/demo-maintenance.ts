@@ -1,3 +1,4 @@
+import { issueServiceToken } from "./auth-tokens";
 import type { FastifyInstance } from "fastify";
 import { client } from "../db/index";
 import { insertTrace, deleteAllUserTraces } from "../db/repository";
@@ -32,7 +33,7 @@ export async function runDemoMaintenance(server: FastifyInstance): Promise<void>
       await deleteAllUserTraces(demo.id);
       await client.execute({ sql: `DELETE FROM trace_notes WHERE user_id = ?`, args: [demo.id] });
 
-      const token = server.jwt.sign({ userId: demo.id, email: demo.email });
+      const token = issueServiceToken(server, demo);
       await seedDemoData({
         api: async (method, path, body) => {
           const res = await server.inject({

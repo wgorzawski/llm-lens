@@ -6,6 +6,8 @@ export interface Session {
   userAgent: string;
   createdAt: string;
   lastActiveAt: string;
+  /** true for the session this browser is signed in with */
+  current?: boolean;
 }
 
 export function useSessions() {
