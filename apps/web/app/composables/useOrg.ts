@@ -4,6 +4,8 @@ export interface Org {
   defaultEnv: string;
   retentionDays: number;
   logoUrl: string | null;
+  /** The signed-in user's role in this org */
+  role?: "owner" | "admin" | "member" | "viewer";
 }
 
 export interface OrgUpdate {
@@ -16,7 +18,8 @@ export interface OrgUpdate {
 export function useOrg() {
   const { apiFetch } = useApiFetch();
 
-  const org = ref<Org | null>(null);
+  // shared across components (settings page fetches it once, every section reads it)
+  const org = useState<Org | null>("org", () => null);
 
   async function fetchOrg() {
     org.value = await apiFetch<Org>("/orgs/me");
@@ -24,8 +27,8 @@ export function useOrg() {
 
   async function updateOrg(update: OrgUpdate): Promise<Org> {
     const updated = await apiFetch<Org>("/orgs/me", { method: "PATCH", body: update });
-    org.value = updated;
-    return updated;
+    org.value = { ...org.value, ...updated };
+    return org.value;
   }
 
   async function uploadLogo(file: File): Promise<string> {

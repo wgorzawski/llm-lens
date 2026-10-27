@@ -4,6 +4,7 @@ const { org, updateOrg } = useOrg();
 const { me, updatePreferences } = useMe();
 
 const retention = ref(org.value?.retentionDays ?? 7);
+watch(() => org.value?.retentionDays, (days) => { if (days !== undefined) retention.value = days; });
 const savingRetention = ref(false);
 const toast = useToast();
 function savePreference(update: Record<string, unknown>, message: string) {

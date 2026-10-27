@@ -1,5 +1,6 @@
 import { eq, gte, lte, desc, count, and, inArray, sql } from "drizzle-orm";
 import { db, traces, traceNotes, client } from "./index";
+import { visibleUserIds, userIdIn } from "./scope";
 import { providerLabel } from "@llm-lens/types";
 import type { UnifiedTrace, TraceProvider } from "@llm-lens/types";
 import { extractMessageSnippet } from "@llm-lens/parsers";
@@ -121,8 +122,9 @@ export async function listTraces(opts: ListOptions): Promise<ListResult> {
     if (matchingIds.length === 0) return { traces: [], total: 0, limit, offset };
   }
 
+  const scopeIds = await visibleUserIds(opts.userId);
   const where = and(
-    eq(traces.userId, opts.userId),
+    inArray(traces.userId, scopeIds),
     opts.provider ? eq(traces.provider, opts.provider) : undefined,
     opts.model ? eq(traces.model, opts.model) : undefined,
     opts.status ? eq(traces.status, opts.status) : undefined,
@@ -150,10 +152,11 @@ export interface TraceFacets {
 }
 
 export async function listFacets(userId: string): Promise<TraceFacets> {
+  const scope = userIdIn(await visibleUserIds(userId));
   const facet = async (expr: string) => {
     const res = await client.execute({
-      sql: `SELECT ${expr} AS v, COUNT(*) AS n FROM traces WHERE user_id = ? AND ${expr} IS NOT NULL GROUP BY v ORDER BY n DESC LIMIT 100`,
-      args: [userId],
+      sql: `SELECT ${expr} AS v, COUNT(*) AS n FROM traces WHERE ${scope.sql} AND ${expr} IS NOT NULL GROUP BY v ORDER BY n DESC LIMIT 100`,
+      args: scope.args,
     });
     return res.rows.map((r) => ({ value: String(r["v"]), count: Number(r["n"]) }));
   };
@@ -173,7 +176,7 @@ export async function getTrace(id: string, userId: string): Promise<UnifiedTrace
   const rows = await db
     .select()
     .from(traces)
-    .where(and(eq(traces.id, id), eq(traces.userId, userId)))
+    .where(and(eq(traces.id, id), inArray(traces.userId, await visibleUserIds(userId))))
     .limit(1);
   return rows[0] ? rowToTrace(rows[0]) : null;
 }
@@ -182,14 +185,14 @@ export async function setStarred(id: string, userId: string, starred: boolean): 
   await db
     .update(traces)
     .set({ starred })
-    .where(and(eq(traces.id, id), eq(traces.userId, userId)));
+    .where(and(eq(traces.id, id), inArray(traces.userId, await visibleUserIds(userId))));
   return getTrace(id, userId);
 }
 
 export async function deleteTrace(id: string, userId: string): Promise<boolean> {
   const result = await db
     .delete(traces)
-    .where(and(eq(traces.id, id), eq(traces.userId, userId)));
+    .where(and(eq(traces.id, id), inArray(traces.userId, await visibleUserIds(userId))));
   await client.execute({ sql: `DELETE FROM traces_fts WHERE id = ?`, args: [id] });
   return (result.rowsAffected ?? 0) > 0;
 }
@@ -198,7 +201,7 @@ export async function deleteTraces(ids: string[], userId: string): Promise<numbe
   if (ids.length === 0) return 0;
   const result = await db
     .delete(traces)
-    .where(and(eq(traces.userId, userId), inArray(traces.id, ids)));
+    .where(and(inArray(traces.userId, await visibleUserIds(userId)), inArray(traces.id, ids)));
   for (const id of ids) {
     await client.execute({ sql: `DELETE FROM traces_fts WHERE id = ?`, args: [id] });
   }
@@ -206,23 +209,34 @@ export async function deleteTraces(ids: string[], userId: string): Promise<numbe
 }
 
 export async function deleteAllUserTraces(userId: string): Promise<number> {
-  const rows = await db.select({ id: traces.id }).from(traces).where(eq(traces.userId, userId));
-  if (rows.length === 0) return 0;
-  await db.delete(traces).where(eq(traces.userId, userId));
-  for (const row of rows) {
-    await client.execute({ sql: `DELETE FROM traces_fts WHERE id = ?`, args: [row.id] });
+  return deleteTracesOfUsers([userId]);
+}
+
+/** Every trace the user's organization owns ("Wipe all traces", deleting the org) */
+export async function deleteAllOrgTraces(userId: string): Promise<number> {
+  return deleteTracesOfUsers(await visibleUserIds(userId));
+}
+
+async function deleteTracesOfUsers(userIds: string[]): Promise<number> {
+  const result = await db.delete(traces).where(inArray(traces.userId, userIds));
+  const deleted = result.rowsAffected ?? 0;
+  if (deleted > 0) {
+    // one statement instead of one per trace
+    await client.execute(`DELETE FROM traces_fts WHERE id NOT IN (SELECT id FROM traces)`);
+    await client.execute(`DELETE FROM trace_notes WHERE trace_id NOT IN (SELECT id FROM traces)`);
   }
-  return rows.length;
+  return deleted;
 }
 
 export async function* iterateAllTraces(userId: string): AsyncGenerator<UnifiedTrace> {
+  const scopeIds = await visibleUserIds(userId);
   const pageSize = EXPORT_PAGE_SIZE;
   let offset = 0;
   for (;;) {
     const rows = await db
       .select()
       .from(traces)
-      .where(eq(traces.userId, userId))
+      .where(inArray(traces.userId, scopeIds))
       .orderBy(desc(traces.timestamp))
       .limit(pageSize)
       .offset(offset);
@@ -264,6 +278,7 @@ export interface DashboardStats {
 }
 
 export async function usageByDay(userId: string): Promise<DailyUsage[]> {
+  const scope = userIdIn(await visibleUserIds(userId));
   const result = await client.execute({
     sql: `
       SELECT
@@ -273,11 +288,11 @@ export async function usageByDay(userId: string): Promise<DailyUsage[]> {
         SUM(json_extract(usage, '$.outputTokens')) AS output_tokens,
         SUM(COALESCE(json_extract(metadata, '$.costUsd'), 0)) AS cost_usd
       FROM traces
-      WHERE user_id = ?
+      WHERE ${scope.sql}
       GROUP BY day
       ORDER BY day ASC
     `,
-    args: [userId],
+    args: scope.args,
   });
   return result.rows.map((r) => ({
     day: r["day"] as string,
@@ -290,6 +305,7 @@ export async function usageByDay(userId: string): Promise<DailyUsage[]> {
 
 export async function getDashboardStats(userId: string): Promise<DashboardStats> {
   const daily = await usageByDay(userId);
+  const scope = userIdIn(await visibleUserIds(userId));
 
   const modelResult = await client.execute({
     sql: `
@@ -302,11 +318,11 @@ export async function getDashboardStats(userId: string): Promise<DashboardStats>
         SUM(COALESCE(json_extract(metadata, '$.costUsd'), 0)) AS cost_usd,
         AVG(json_extract(metadata, '$.durationMs')) AS avg_duration_ms
       FROM traces
-      WHERE user_id = ?
+      WHERE ${scope.sql}
       GROUP BY model, provider
       ORDER BY trace_count DESC
     `,
-    args: [userId],
+    args: scope.args,
   });
 
   const byModel: ModelStats[] = modelResult.rows.map((r) => ({
@@ -331,8 +347,8 @@ export async function getDashboardStats(userId: string): Promise<DashboardStats>
   );
 
   const durationRow = await client.execute({
-    sql: `SELECT AVG(json_extract(metadata, '$.durationMs')) AS avg_ms FROM traces WHERE user_id = ?`,
-    args: [userId],
+    sql: `SELECT AVG(json_extract(metadata, '$.durationMs')) AS avg_ms FROM traces WHERE ${scope.sql}`,
+    args: scope.args,
   });
   totals.avgDurationMs = Math.round(Number(durationRow.rows[0]?.["avg_ms"] ?? 0));
 
@@ -374,6 +390,7 @@ export interface DashboardV2 {
 }
 
 export async function getDashboardV2(userId: string, range = "24h"): Promise<DashboardV2> {
+  const scope = userIdIn(await visibleUserIds(userId));
   const now = new Date();
   const cfgMap: Record<string, { hours: number; buckets: number; bucketHours: number }> = {
     "1h":  { hours: 1,   buckets: 12, bucketHours: 1 / 12 },
@@ -394,10 +411,10 @@ export async function getDashboardV2(userId: string, range = "24h"): Promise<Das
         COALESCE(json_extract(usage, '$.inputTokens'), 0) AS inp,
         COALESCE(json_extract(usage, '$.cacheReadTokens'), 0) AS cache
       FROM traces
-      WHERE user_id = ? AND timestamp >= ?
+      WHERE ${scope.sql} AND timestamp >= ?
       ORDER BY timestamp ASC
     `,
-    args: [userId, new Date(prevSinceMs).toISOString()],
+    args: [...scope.args, new Date(prevSinceMs).toISOString()],
   });
 
   type R = { timestamp: string; provider: string; model: string; status: string; dur: number; cost: number; inp: number; cache: number };
@@ -494,7 +511,7 @@ export async function getDashboardV2(userId: string, range = "24h"): Promise<Das
     (acc, x) => ({ traceCount: acc.traceCount + x.traceCount, inputTokens: acc.inputTokens + x.inputTokens, outputTokens: acc.outputTokens + x.outputTokens, costUsd: acc.costUsd + x.costUsd, avgDurationMs: 0 }),
     { traceCount: 0, inputTokens: 0, outputTokens: 0, costUsd: 0, avgDurationMs: 0 },
   ) };
-  const durRow = await client.execute({ sql: `SELECT AVG(json_extract(metadata, '$.durationMs')) AS m FROM traces WHERE user_id = ?`, args: [userId] });
+  const durRow = await client.execute({ sql: `SELECT AVG(json_extract(metadata, '$.durationMs')) AS m FROM traces WHERE ${scope.sql}`, args: scope.args });
   totals.avgDurationMs = Math.round(Number(durRow.rows[0]?.["m"] ?? 0));
 
   return {

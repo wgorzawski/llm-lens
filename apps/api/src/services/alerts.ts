@@ -1,4 +1,5 @@
 import { client } from "../db/index";
+import { visibleUserIds, userIdIn } from "../db/scope";
 import { notify, type Notification, type NotificationPrefs } from "./notify";
 
 // Threshold alerts and e-mail digests, as configured in Settings -> Notifications.
@@ -70,14 +71,15 @@ interface WindowStats {
 }
 
 async function windowStats(userId: string, sinceIso: string, untilIso?: string): Promise<WindowStats> {
+  const scope = userIdIn(await visibleUserIds(userId));
   const res = await client.execute({
     sql: `SELECT status,
             COALESCE(json_extract(metadata, '$.durationMs'), 0) AS dur,
             COALESCE(json_extract(metadata, '$.costUsd'), 0) AS cost
           FROM traces
-          WHERE user_id = ? AND timestamp >= ? ${untilIso ? "AND timestamp < ?" : ""} AND ${PROD}
+          WHERE ${scope.sql} AND timestamp >= ? ${untilIso ? "AND timestamp < ?" : ""} AND ${PROD}
           LIMIT 50000`,
-    args: untilIso ? [userId, sinceIso, untilIso] : [userId, sinceIso],
+    args: untilIso ? [...scope.args, sinceIso, untilIso] : [...scope.args, sinceIso],
   });
   const stats: WindowStats = { calls: 0, errors: 0, durations: [], cost: 0 };
   for (const r of res.rows) {
@@ -178,13 +180,14 @@ function localParts(now: Date, timeZone: string): { date: string; hour: number; 
 }
 
 async function topNames(userId: string, sinceIso: string): Promise<string[]> {
+  const scope = userIdIn(await visibleUserIds(userId));
   const res = await client.execute({
     sql: `SELECT COALESCE(json_extract(metadata, '$.name'), model) AS label, COUNT(*) AS n,
             SUM(COALESCE(json_extract(metadata, '$.costUsd'), 0)) AS cost,
             SUM(status = 'err') AS errs
-          FROM traces WHERE user_id = ? AND timestamp >= ? AND ${PROD}
+          FROM traces WHERE ${scope.sql} AND timestamp >= ? AND ${PROD}
           GROUP BY label ORDER BY n DESC LIMIT 5`,
-    args: [userId, sinceIso],
+    args: [...scope.args, sinceIso],
   });
   return res.rows.map(
     (r) => `  - ${String(r["label"])}: ${Number(r["n"])} calls, ${fmtUsd(Number(r["cost"]))}${Number(r["errs"]) ? `, ${Number(r["errs"])} failed` : ""}`

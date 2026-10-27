@@ -93,7 +93,8 @@ async function saveOrg() {
     </div>
     <div class="set-row-actions">
       <span v-if="orgError" class="set-error">{{ orgError }}</span>
-      <button class="s-btn primary" :disabled="savingOrg" @click="saveOrg">{{ savingOrg ? "Saving…" : "Save changes" }}</button>
+      <span v-if="org?.role === 'member' || org?.role === 'viewer'" class="set-row-hint">Only admins and the owner can change these.</span>
+      <button v-else class="s-btn primary" :disabled="savingOrg" @click="saveOrg">{{ savingOrg ? "Saving…" : "Save changes" }}</button>
     </div>
   </section>
 

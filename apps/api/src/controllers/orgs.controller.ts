@@ -4,9 +4,11 @@ import { createWriteStream, mkdirSync } from "node:fs";
 import { unlink } from "node:fs/promises";
 import path from "node:path";
 import { pipeline } from "node:stream/promises";
-import { findUserById, updateUserOrgSlug } from "../db/users.repository";
+import { findUserById, updateUserOrgSlug, listOrgUserIds, privateOrgSlug } from "../db/users.repository";
 import { getOrg, upsertOrg, findOrgBySlugExcluding, updateLogoUrl, deleteOrg, type OrgUpdate } from "../db/orgs.repository";
-import { deleteAllUserTraces, getDashboardV2 } from "../db/repository";
+import { deleteAllOrgTraces, getDashboardV2 } from "../db/repository";
+import { clearScopeCache } from "../db/scope";
+import { roleOf } from "../services/roles";
 import { defaultRetentionDays } from "../services/instance";
 
 const UPLOADS_DIR = path.resolve(process.env["UPLOADS_DIR"] ?? "./uploads");
@@ -36,7 +38,8 @@ export class OrgsController {
     const user = await findUserById(request.user.userId);
     if (!user) return reply.status(404).send({ error: "User not found" });
     const org = await getOrg(user.org);
-    return org ?? { slug: user.org, name: user.org, defaultEnv: "production", retentionDays: defaultRetentionDays, logoUrl: null };
+    const role = await roleOf(user.id);
+    return { ...(org ?? { slug: user.org, name: user.org, defaultEnv: "production", retentionDays: defaultRetentionDays, logoUrl: null }), role };
   }
 
   @GET("/me/stats")
@@ -130,8 +133,10 @@ export class OrgsController {
       return reply.status(404).send({ error: "No active member found with that email" });
     }
 
+    // make sure the current owner has a membership row, so the demotion sticks
+    await getOrCreateOwnerMembership(user.org, user.id, user.email);
     const currentMember = await findMemberByEmail(user.org, user.email);
-    if (currentMember) await updateMemberRole(currentMember.id, user.org, "member");
+    if (currentMember) await updateMemberRole(currentMember.id, user.org, "admin");
     await updateMemberRole(newOwner.id, user.org, "owner");
 
     return { ok: true };
@@ -141,7 +146,7 @@ export class OrgsController {
   async wipeTraces(request: FastifyRequest, reply: FastifyReply) {
     const user = await findUserById(request.user.userId);
     if (!user) return reply.status(404).send({ error: "User not found" });
-    const deleted = await deleteAllUserTraces(user.id);
+    const deleted = await deleteAllOrgTraces(user.id);
     return { deleted };
   }
 
@@ -149,10 +154,13 @@ export class OrgsController {
   async deleteOrganization(request: FastifyRequest, reply: FastifyReply) {
     const user = await findUserById(request.user.userId);
     if (!user) return reply.status(404).send({ error: "User not found" });
-    await deleteAllUserTraces(user.id);
+    await deleteAllOrgTraces(user.id);
+    // everyone in the org (owner included) gets a fresh private org of their own
+    const orgUsers = await listOrgUserIds(user.org);
+    for (const id of orgUsers) await updateUserOrgSlug(id, privateOrgSlug(id));
     await removeAllOrgMembers(user.org);
     await deleteOrg(user.org);
-    await updateUserOrgSlug(user.id, "personal");
+    clearScopeCache();
     return reply.status(204).send();
   }
 
@@ -198,9 +206,11 @@ export class OrgsController {
     const role = request.body.role;
     if (!ROLES.includes(role)) return reply.status(400).send({ error: "Invalid role" });
 
+    if (role === "owner") return reply.status(400).send({ error: "Use \"Transfer ownership\" to make someone the owner" });
     const member = await findMemberById(request.params.id, user.org);
     if (!member) return reply.status(404).send({ error: "Member not found" });
     if (member.userId === user.id) return reply.status(400).send({ error: "Cannot change your own role" });
+    if (member.role === "owner") return reply.status(403).send({ error: "The owner's role can't be changed" });
 
     await updateMemberRole(member.id, user.org, role);
     return listMembers(user.org);
@@ -217,10 +227,13 @@ export class OrgsController {
     const member = await findMemberById(request.params.id, user.org);
     if (!member) return reply.status(404).send({ error: "Member not found" });
     if (member.userId === user.id) return reply.status(400).send({ error: "Cannot remove yourself" });
+    if (member.role === "owner") return reply.status(403).send({ error: "The owner can't be removed" });
 
     await removeMember(member.id, user.org);
     if (member.userId && member.status === "active") {
-      await updateUserOrgSlug(member.userId, "personal");
+      // a private org of their own - "personal" would be shared with every other removed member
+      await updateUserOrgSlug(member.userId, privateOrgSlug(member.userId));
+      clearScopeCache();
     }
     return reply.status(204).send();
   }
@@ -252,6 +265,7 @@ export class OrgsController {
 
     await acceptInvite(request.params.token, user.id);
     await updateUserOrgSlug(user.id, invite.orgSlug);
+    clearScopeCache();
     const org = await getOrg(invite.orgSlug);
     return org;
   }

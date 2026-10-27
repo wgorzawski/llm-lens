@@ -1,9 +1,19 @@
 import { eq, and, ne } from "drizzle-orm";
 import { db, users } from "./index";
 
+/** A user's own, unshared org slug */
+export function privateOrgSlug(userId: string): string {
+  return `org-${userId.slice(0, 8)}`;
+}
+
+export async function listOrgUserIds(org: string): Promise<string[]> {
+  const rows = await db.select({ id: users.id }).from(users).where(eq(users.org, org));
+  return rows.map((r) => r.id);
+}
+
 export async function createUser(email: string, passwordHash: string, provider = "email", providerId?: string) {
   const id = crypto.randomUUID();
-  const org = `org-${id.slice(0, 8)}`;
+  const org = privateOrgSlug(id);
   await db.insert(users).values({ id, email, passwordHash, provider, providerId: providerId ?? null, org });
   return { id, email };
 }

@@ -3,6 +3,9 @@ import type { MemberRole, OrgMember } from "~/composables/useOrgMembers";
 
 const { members, inviteMember, updateRole, removeMember } = useOrgMembers();
 const { blockedInDemo } = useDemoGuard();
+const { org } = useOrg();
+// inviting and managing members needs admin or owner (enforced by the API too)
+const canManage = computed(() => !org.value?.role || org.value.role === "owner" || org.value.role === "admin");
 const toast = useToast();
 
 const memberRoles: MemberRole[] = ["admin", "member", "viewer"];
@@ -87,7 +90,13 @@ async function onMemberAction(m: OrgMember, actionId: string) {
       </div>
     </div>
     <div class="set-section-body">
-      <div class="set-row">
+      <div v-if="!canManage" class="set-row">
+        <div class="set-row-label">
+          <div class="set-row-label-text">Only admins and the owner can invite people</div>
+          <div class="set-row-hint">Your role: {{ org?.role }}</div>
+        </div>
+      </div>
+      <div v-else class="set-row">
         <div class="set-row-label">
           <div class="set-row-label-text">Invite by email</div>
           <div v-if="inviteError" class="set-error">{{ inviteError }}</div>
@@ -134,7 +143,7 @@ async function onMemberAction(m: OrgMember, actionId: string) {
           <div class="member-cell mono">{{ new Date(m.invitedAt).toLocaleDateString() }}</div>
           <div class="member-cell mono">{{ m.joinedAt ? new Date(m.joinedAt).toLocaleDateString() : "—" }}</div>
           <div class="member-cell" style="justify-content:flex-end">
-            <ActionMenu v-if="m.role !== 'owner'" :items="memberActions(m)" @select="(id) => onMemberAction(m, id)">
+            <ActionMenu v-if="canManage && m.role !== 'owner'" :items="memberActions(m)" @select="(id) => onMemberAction(m, id)">
               <button class="icon-btn xs"><AppIcon name="more" :size="12" /></button>
             </ActionMenu>
           </div>

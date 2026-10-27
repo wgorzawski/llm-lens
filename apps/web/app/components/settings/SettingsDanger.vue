@@ -94,6 +94,13 @@ async function doDelete() {
 </script>
 
 <template>
+  <section v-if="org?.role && org.role !== 'owner'" class="set-section">
+    <div class="set-section-head"><div>
+      <div class="set-section-title">Danger zone</div>
+      <div class="set-section-sub">Only the organization's owner can transfer ownership, wipe traces or delete the organization.</div>
+    </div></div>
+  </section>
+  <template v-else>
   <section class="set-section">
     <div class="set-section-head"><div>
       <div class="set-section-title">Danger zone</div>
@@ -156,6 +163,7 @@ async function doDelete() {
 
     </div>
   </section>
+  </template>
 </template>
 
 <style scoped>
