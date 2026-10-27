@@ -1,15 +1,29 @@
 import { Controller, GET, POST } from "fastify-decorators";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import bcrypt from "bcryptjs";
-import { createUser, findUserByEmail, findUserById, findOrCreateOAuthUser, consumeRecoveryCode } from "../db/users.repository";
+import { createUser, hasAnyUser, findUserByEmail, findUserById, findOrCreateOAuthUser, consumeRecoveryCode } from "../db/users.repository";
 import { BCRYPT_ROUNDS, PENDING_2FA_TOKEN_TTL, OAUTH_FETCH_TIMEOUT_MS } from "../constants";
 import { createSession } from "../db/sessions.repository";
 import { verifyTotpCode, hashRecoveryCode } from "../services/totp";
 import { sendSigninAlert } from "../services/email";
+import { registrationEnabled } from "../services/instance";
+import { hasPendingInvite } from "../db/org-members.repository";
+
+const REGISTRATION_CLOSED = "Sign-ups are closed on this instance - ask the owner for an invite";
+
+/**
+ * Closed instances still let invited people create their account, and the very first
+ * account (the owner of a fresh install) can always be created.
+ */
+async function mayRegister(email: string): Promise<boolean> {
+  if (registrationEnabled) return true;
+  if (!(await hasAnyUser())) return true;
+  return hasPendingInvite(email);
+}
 
 declare module "@fastify/jwt" {
   interface FastifyJWT {
-    user: { userId: string; email: string; pending2fa?: boolean };
+    user: { userId: string; email: string; pending2fa?: boolean; apiKeyEnv?: string };
   }
 }
 
@@ -28,6 +42,11 @@ const AUTH_RATE_LIMIT = {
 
 @Controller("/auth")
 export class AuthController {
+  @GET("/config")
+  async config() {
+    return { registrationEnabled };
+  }
+
   @POST("/register", { config: { rateLimit: AUTH_RATE_LIMIT } })
   async register(
     request: FastifyRequest<{ Body: { email: string; password: string } }>,
@@ -40,6 +59,10 @@ export class AuthController {
     }
     if (password.length < 8) {
       return reply.status(400).send({ error: "Password must be at least 8 characters" });
+    }
+
+    if (!(await mayRegister(email))) {
+      return reply.status(403).send({ error: REGISTRATION_CLOSED });
     }
 
     const existing = await findUserByEmail(email);
@@ -150,6 +173,9 @@ export class AuthController {
     );
     if (!profile?.email) return reply.redirect(`${frontendUrl}/login?error=no_email`);
 
+    if (!(await findUserByEmail(profile.email)) && !(await mayRegister(profile.email))) {
+      return reply.redirect(`${frontendUrl}/login?error=registration_closed`);
+    }
     const user = await findOrCreateOAuthUser(profile.email, "google", profile.id);
     const token = request.server.jwt.sign({ userId: user.id, email: user.email });
     return reply.redirect(`${frontendUrl}/auth/callback?token=${token}`);
@@ -182,6 +208,9 @@ export class AuthController {
 
     if (!email) return reply.redirect(`${frontendUrl}/login?error=no_email`);
 
+    if (!(await findUserByEmail(email)) && !(await mayRegister(email))) {
+      return reply.redirect(`${frontendUrl}/login?error=registration_closed`);
+    }
     const user = await findOrCreateOAuthUser(email, "github", String(profile?.id));
     const token = request.server.jwt.sign({ userId: user.id, email: user.email });
     return reply.redirect(`${frontendUrl}/auth/callback?token=${token}`);

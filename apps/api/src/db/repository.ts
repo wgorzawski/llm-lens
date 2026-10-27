@@ -19,6 +19,9 @@ export interface ListOptions {
   to?: string;
   q?: string;
   sort?: TraceSort;
+  name?: string;
+  env?: string;
+  sessionId?: string;
   userId: string;
 }
 
@@ -93,7 +96,12 @@ export async function insertTrace(
   });
   await client.execute({
     sql: `INSERT INTO traces_fts (id, model, snippet) VALUES (?, ?, ?)`,
-    args: [trace.id, trace.metadata.model, extractMessageSnippet(trace.messages)],
+    // the trace name rides along in the model column so search finds "recipe.generate" too
+    args: [
+      trace.id,
+      [trace.metadata.model, trace.metadata.name].filter(Boolean).join(" "),
+      extractMessageSnippet(trace.messages),
+    ],
   });
   return trace;
 }
@@ -121,6 +129,9 @@ export async function listTraces(opts: ListOptions): Promise<ListResult> {
     opts.from ? gte(traces.timestamp, opts.from) : undefined,
     opts.to ? lte(traces.timestamp, opts.to) : undefined,
     matchingIds ? inArray(traces.id, matchingIds) : undefined,
+    opts.name ? sql`json_extract(${traces.metadata}, '$.name') = ${opts.name}` : undefined,
+    opts.env ? sql`json_extract(${traces.metadata}, '$.env') = ${opts.env}` : undefined,
+    opts.sessionId ? sql`json_extract(${traces.metadata}, '$.sessionId') = ${opts.sessionId}` : undefined,
   );
 
   const [rows, [{ value: total }]] = await Promise.all([
@@ -129,6 +140,32 @@ export async function listTraces(opts: ListOptions): Promise<ListResult> {
   ]);
 
   return { traces: rows.map(rowToTrace), total, limit, offset };
+}
+
+export interface TraceFacets {
+  names: Array<{ name: string; count: number }>;
+  envs: Array<{ env: string; count: number }>;
+  models: Array<{ model: string; count: number }>;
+}
+
+export async function listFacets(userId: string): Promise<TraceFacets> {
+  const facet = async (expr: string) => {
+    const res = await client.execute({
+      sql: `SELECT ${expr} AS v, COUNT(*) AS n FROM traces WHERE user_id = ? AND ${expr} IS NOT NULL GROUP BY v ORDER BY n DESC LIMIT 100`,
+      args: [userId],
+    });
+    return res.rows.map((r) => ({ value: String(r["v"]), count: Number(r["n"]) }));
+  };
+  const [names, envs, models] = await Promise.all([
+    facet("json_extract(metadata, '$.name')"),
+    facet("json_extract(metadata, '$.env')"),
+    facet("model"),
+  ]);
+  return {
+    names: names.map((f) => ({ name: f.value, count: f.count })),
+    envs: envs.map((f) => ({ env: f.value, count: f.count })),
+    models: models.map((f) => ({ model: f.value, count: f.count })),
+  };
 }
 
 export async function getTrace(id: string, userId: string): Promise<UnifiedTrace | null> {
@@ -318,7 +355,7 @@ export interface DashboardV2 {
     p95: number[];
     p99: number[];
     errs: number[];
-    split: Array<{ anthropic: number; openai: number; "vercel-ai": number }>;
+    split: Array<{ anthropic: number; openai: number; "vercel-ai": number; groq: number }>;
   };
   kpis: {
     spend: number; spendDelta: number; spendSpark: number[];
@@ -353,7 +390,7 @@ export async function getDashboardV2(userId: string, range = "24h"): Promise<Das
         COALESCE(json_extract(metadata, '$.durationMs'), 0) AS dur,
         COALESCE(json_extract(metadata, '$.costUsd'), 0) AS cost,
         COALESCE(json_extract(usage, '$.inputTokens'), 0) AS inp,
-        COALESCE(json_extract(usage, '$.cacheReadInputTokens'), 0) AS cache
+        COALESCE(json_extract(usage, '$.cacheReadTokens'), 0) AS cache
       FROM traces
       WHERE user_id = ? AND timestamp >= ?
       ORDER BY timestamp ASC
@@ -386,10 +423,10 @@ export async function getDashboardV2(userId: string, range = "24h"): Promise<Das
     return d.toISOString().slice(11, 13) + ":00";
   };
 
-  type Bucket = { label: string; cost: number; reqs: number; errs: number; durs: number[]; inp: number; cache: number; split: { anthropic: number; openai: number; "vercel-ai": number } };
+  type Bucket = { label: string; cost: number; reqs: number; errs: number; durs: number[]; inp: number; cache: number; split: { anthropic: number; openai: number; "vercel-ai": number; groq: number } };
   const buckets: Bucket[] = Array.from({ length: cfg.buckets }, (_, i) => ({
     label: mkLabel(i), cost: 0, reqs: 0, errs: 0, durs: [], inp: 0, cache: 0,
-    split: { anthropic: 0, openai: 0, "vercel-ai": 0 },
+    split: { anthropic: 0, openai: 0, "vercel-ai": 0, groq: 0 },
   }));
 
   for (const r of curr) {
@@ -399,7 +436,7 @@ export async function getDashboardV2(userId: string, range = "24h"): Promise<Das
     b.reqs++; b.cost += r.cost; b.inp += r.inp; b.cache += r.cache;
     if (r.status === "err") b.errs++;
     if (r.dur > 0) b.durs.push(r.dur);
-    const k = r.provider as "anthropic" | "openai" | "vercel-ai";
+    const k = r.provider as "anthropic" | "openai" | "vercel-ai" | "groq";
     if (k in b.split) b.split[k]++;
   }
 
@@ -428,7 +465,7 @@ export async function getDashboardV2(userId: string, range = "24h"): Promise<Das
     if (r.dur > 0) v.durs.push(r.dur);
     provMap.set(r.provider, v);
   }
-  const provLabels: Record<string, string> = { anthropic: "Anthropic", openai: "OpenAI", "vercel-ai": "Vercel AI" };
+  const provLabels: Record<string, string> = { anthropic: "Anthropic", openai: "OpenAI", "vercel-ai": "Vercel AI", groq: "Groq" };
   const providers = [...provMap.entries()].map(([id, v]) => ({
     id, label: provLabels[id] ?? id,
     requests: v.req, cost: v.cost,

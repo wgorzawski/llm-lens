@@ -8,6 +8,11 @@ export async function createUser(email: string, passwordHash: string, provider =
   return { id, email };
 }
 
+export async function hasAnyUser(): Promise<boolean> {
+  const rows = await db.select({ id: users.id }).from(users).limit(1);
+  return rows.length > 0;
+}
+
 export async function findUserByEmail(email: string) {
   const rows = await db.select().from(users).where(eq(users.email, email)).limit(1);
   return rows[0] ?? null;

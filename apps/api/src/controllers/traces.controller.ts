@@ -1,10 +1,11 @@
 import { Controller, GET, POST, PATCH, DELETE } from "fastify-decorators";
 import type { FastifyReply, FastifyRequest } from "fastify";
-import { parseAnthropicLog, parseOpenAILog, parseVercelAILog } from "@llm-lens/parsers";
-import type { AnthropicRawLog, OpenAIRawLog, VercelAIRawLog, TraceProvider } from "@llm-lens/types";
+import { parseAnthropicLog, parseOpenAILog, parseVercelAILog, maskPIIDeep, type ParseResult } from "@llm-lens/parsers";
+import type { AnthropicRawLog, OpenAIRawLog, VercelAIRawLog, TraceProvider, UnifiedTrace } from "@llm-lens/types";
 import {
   insertTrace,
   listTraces,
+  listFacets,
   getTrace,
   setStarred,
   deleteTrace,
@@ -20,14 +21,58 @@ import { findUserById } from "../db/users.repository";
 
 async function fireWebhookIfConfigured(userId: string, trace: unknown) {
   const user = await findUserById(userId);
-  const prefs = JSON.parse((user?.preferences as string) || "{}") as Record<string, unknown>;
-  const url = prefs.outboundWebhookUrl as string | undefined;
+  const url = userPreferences(user)["outboundWebhookUrl"] as string | undefined;
   if (!url) return;
   fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ event: "trace.created", trace }),
   }).catch(() => null);
+}
+
+function userPreferences(user: { preferences?: unknown } | null): Record<string, unknown> {
+  try {
+    return JSON.parse((user?.preferences as string) || "{}") as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Shared ingest path for every provider: fills the environment from the API key when the
+ * caller didn't send one, masks PII when the user turned that on, then stores the trace.
+ */
+async function ingest(request: FastifyRequest, reply: FastifyReply, result: ParseResult) {
+  if (!result.success) return reply.status(422).send({ error: result.error });
+  const { userId, apiKeyEnv } = request.user;
+  let trace: UnifiedTrace = result.trace;
+  if (!trace.metadata.env && apiKeyEnv) trace = { ...trace, metadata: { ...trace.metadata, env: apiKeyEnv } };
+
+  const user = await findUserById(userId);
+  if (userPreferences(user)["maskPII"] === true) {
+    trace = {
+      ...trace,
+      messages: maskPIIDeep(trace.messages),
+      metadata: {
+        ...trace.metadata,
+        systemPrompt: trace.metadata.systemPrompt && maskPIIDeep(trace.metadata.systemPrompt),
+        reasoning: trace.metadata.reasoning && maskPIIDeep(trace.metadata.reasoning),
+        error: trace.metadata.error && maskPIIDeep(trace.metadata.error),
+      },
+      raw: maskPIIDeep(trace.raw),
+    };
+  }
+
+  try {
+    await insertTrace(trace, userId);
+  } catch (err) {
+    if (String((err as { message?: string })?.message ?? err).includes("UNIQUE")) {
+      return reply.status(409).send({ error: `Trace ${trace.id} already exists` });
+    }
+    throw err;
+  }
+  void fireWebhookIfConfigured(userId, trace);
+  return reply.status(201).send(trace);
 }
 
 const TRACE_SORTS: TraceSort[] = ["recent", "latency", "cost", "tokens"];
@@ -50,6 +95,9 @@ export class TracesController {
         to?: string;
         q?: string;
         sort?: string;
+        name?: string;
+        env?: string;
+        sessionId?: string;
       };
     }>
   ) {
@@ -70,7 +118,16 @@ export class TracesController {
     const sort = TRACE_SORTS.includes(request.query.sort as TraceSort)
       ? (request.query.sort as TraceSort)
       : undefined;
-    return listTraces({ limit, offset, provider, model, status, latency, from, to, q, sort, userId });
+    const name = request.query.name || undefined;
+    const env = request.query.env || undefined;
+    const sessionId = request.query.sessionId || undefined;
+    return listTraces({ limit, offset, provider, model, status, latency, from, to, q, sort, name, env, sessionId, userId });
+  }
+
+  /** Distinct trace names, environments and models - for filter dropdowns */
+  @GET("/facets")
+  async facets(request: FastifyRequest) {
+    return listFacets(request.user.userId);
   }
 
   @GET("/:id")
@@ -88,11 +145,7 @@ export class TracesController {
     request: FastifyRequest<{ Body: AnthropicRawLog }>,
     reply: FastifyReply
   ) {
-    const result = parseAnthropicLog(request.body);
-    if (!result.success) return reply.status(422).send({ error: result.error });
-    const trace = await insertTrace(result.trace, request.user.userId);
-    void fireWebhookIfConfigured(request.user.userId, trace);
-    return reply.status(201).send(trace);
+    return ingest(request, reply, parseAnthropicLog(request.body));
   }
 
   @POST("/openai")
@@ -100,11 +153,16 @@ export class TracesController {
     request: FastifyRequest<{ Body: OpenAIRawLog }>,
     reply: FastifyReply
   ) {
-    const result = parseOpenAILog(request.body);
-    if (!result.success) return reply.status(422).send({ error: result.error });
-    const trace = await insertTrace(result.trace, request.user.userId);
-    void fireWebhookIfConfigured(request.user.userId, trace);
-    return reply.status(201).send(trace);
+    return ingest(request, reply, parseOpenAILog(request.body));
+  }
+
+  /** Groq speaks the OpenAI Chat Completions format - same parser, recorded as provider "groq" */
+  @POST("/groq")
+  async ingestGroqLog(
+    request: FastifyRequest<{ Body: OpenAIRawLog }>,
+    reply: FastifyReply
+  ) {
+    return ingest(request, reply, parseOpenAILog(request.body, { provider: "groq" }));
   }
 
   @POST("/vercel-ai")
@@ -112,11 +170,7 @@ export class TracesController {
     request: FastifyRequest<{ Body: VercelAIRawLog }>,
     reply: FastifyReply
   ) {
-    const result = parseVercelAILog(request.body);
-    if (!result.success) return reply.status(422).send({ error: result.error });
-    const trace = await insertTrace(result.trace, request.user.userId);
-    void fireWebhookIfConfigured(request.user.userId, trace);
-    return reply.status(201).send(trace);
+    return ingest(request, reply, parseVercelAILog(request.body));
   }
 
   @PATCH("/:id")

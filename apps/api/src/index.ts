@@ -23,7 +23,10 @@ import { hashKey, findApiKeyByHash, touchApiKey } from "./db/api-keys.repository
 import { enforceRetention } from "./services/retention";
 import { runDemoMaintenance } from "./services/demo-maintenance";
 import { isBlockedForDemoAccount } from "./services/demo-guard";
-import { RETENTION_CHECK_INTERVAL_MS, DEMO_REFRESH_INTERVAL_MS, DEMO_MIN_RETENTION_DAYS } from "./constants";
+import { bodyLimitBytes } from "./services/instance";
+import { runBackupIfDue, backupsEnabled } from "./services/backup";
+import { apiKeyRouteAllowed } from "./services/api-key-scopes";
+import { RETENTION_CHECK_INTERVAL_MS, DEMO_REFRESH_INTERVAL_MS, DEMO_MIN_RETENTION_DAYS, BACKUP_CHECK_INTERVAL_MS } from "./constants";
 
 declare module "fastify" {
   interface FastifyInstance {
@@ -32,7 +35,16 @@ declare module "fastify" {
   }
 }
 
-const server = Fastify({ logger: true });
+function parseScopes(raw: string): string[] {
+  try {
+    const scopes: unknown = JSON.parse(raw);
+    return Array.isArray(scopes) ? scopes.map(String) : [];
+  } catch {
+    return [];
+  }
+}
+
+const server = Fastify({ logger: true, bodyLimit: bodyLimitBytes });
 
 const apiUrl = process.env["API_URL"] ?? "http://localhost:3001";
 
@@ -93,10 +105,13 @@ server.addHook("preHandler", async (request, reply) => {
   if (authHeader?.startsWith("Bearer llmlens_sk_")) {
     const rawKey = authHeader.slice("Bearer ".length);
     const key = await findApiKeyByHash(hashKey(rawKey));
-    if (!key) return reply.status(401).send({ error: "Invalid API key" });
+    if (!key || key.status !== "active") return reply.status(401).send({ error: "Invalid API key" });
     const user = await findUserById(key.userId);
     if (!user) return reply.status(401).send({ error: "Invalid API key" });
-    request.user = { userId: user.id, email: user.email };
+    // API keys are for sending and reading traces - never for account, org or key management
+    const scopeError = apiKeyRouteAllowed(request.method, request.routeOptions.url, parseScopes(key.scopes));
+    if (scopeError) return reply.status(403).send({ error: scopeError });
+    request.user = { userId: user.id, email: user.email, apiKeyEnv: key.env };
     void touchApiKey(key.id).catch(() => { /* non-critical */ });
     return;
   }
@@ -162,3 +177,13 @@ void runMaintenance().catch((err) => server.log.error(err));
 setInterval(() => {
   void runMaintenance().catch((err) => server.log.error(err));
 }, demoMode ? DEMO_REFRESH_INTERVAL_MS : RETENTION_CHECK_INTERVAL_MS);
+
+// Daily database snapshot (only when BACKUP_DIR is set) - checked hourly, made once a day.
+if (backupsEnabled) {
+  const backup = () =>
+    runBackupIfDue()
+      .then((file) => file && server.log.info({ file }, "database backup written"))
+      .catch((err) => server.log.error({ err }, "database backup failed"));
+  void backup();
+  setInterval(() => void backup(), BACKUP_CHECK_INTERVAL_MS);
+}

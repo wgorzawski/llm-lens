@@ -78,6 +78,15 @@ export async function initDb(): Promise<void> {
   await client.execute(
     `CREATE INDEX IF NOT EXISTS idx_traces_status ON traces (status)`
   );
+  await client.execute(
+    `CREATE INDEX IF NOT EXISTS idx_traces_user_timestamp ON traces (user_id, timestamp DESC)`
+  );
+  await client.execute(
+    `CREATE INDEX IF NOT EXISTS idx_traces_user_name ON traces (user_id, json_extract(metadata, '$.name'))`
+  );
+  // WAL lets the dashboard read while traces are being written (and backups run)
+  try { await client.execute(`PRAGMA journal_mode = WAL`); } catch { /* not supported */ }
+  try { await client.execute(`PRAGMA busy_timeout = 5000`); } catch { /* not supported */ }
 
   await client.execute(`
     CREATE TABLE IF NOT EXISTS api_keys (

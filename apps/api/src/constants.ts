@@ -6,6 +6,7 @@ export const LATENCY_SLOW_MS = 5000;
 export const FTS_MATCH_LIMIT = 500;
 export const EXPORT_PAGE_SIZE = 200;
 export const RETENTION_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
+export const BACKUP_CHECK_INTERVAL_MS = 60 * 60 * 1000;
 export const DEMO_REFRESH_INTERVAL_MS = 60 * 60 * 1000;
 export const DEMO_MIN_RETENTION_DAYS = 30;
 // Shared public demo login - must match apps/web (login page demo button, useDemoGuard).

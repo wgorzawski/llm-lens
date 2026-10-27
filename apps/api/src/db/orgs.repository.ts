@@ -1,5 +1,6 @@
 import { eq, ne, and } from "drizzle-orm";
 import { db, orgs } from "./index";
+import { defaultRetentionDays } from "../services/instance";
 
 export async function getOrg(slug: string) {
   const rows = await db.select().from(orgs).where(eq(orgs.slug, slug)).limit(1);
@@ -30,7 +31,7 @@ export async function upsertOrg(currentSlug: string, update: OrgUpdate) {
       slug: nextSlug,
       name: update.name ?? currentSlug,
       defaultEnv: update.defaultEnv ?? "production",
-      retentionDays: update.retentionDays ?? 7,
+      retentionDays: update.retentionDays ?? defaultRetentionDays,
     };
     await db.insert(orgs).values(row);
     return getOrg(nextSlug);

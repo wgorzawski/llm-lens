@@ -7,6 +7,7 @@ import { pipeline } from "node:stream/promises";
 import { findUserById, updateUserOrgSlug } from "../db/users.repository";
 import { getOrg, upsertOrg, findOrgBySlugExcluding, updateLogoUrl, deleteOrg, type OrgUpdate } from "../db/orgs.repository";
 import { deleteAllUserTraces, getDashboardV2 } from "../db/repository";
+import { defaultRetentionDays } from "../services/instance";
 
 const UPLOADS_DIR = path.resolve(process.env["UPLOADS_DIR"] ?? "./uploads");
 const LOGOS_DIR = path.join(UPLOADS_DIR, "logos");
@@ -35,7 +36,7 @@ export class OrgsController {
     const user = await findUserById(request.user.userId);
     if (!user) return reply.status(404).send({ error: "User not found" });
     const org = await getOrg(user.org);
-    return org ?? { slug: user.org, name: user.org, defaultEnv: "production", retentionDays: 7, logoUrl: null };
+    return org ?? { slug: user.org, name: user.org, defaultEnv: "production", retentionDays: defaultRetentionDays, logoUrl: null };
   }
 
   @GET("/me/stats")
@@ -63,7 +64,12 @@ export class OrgsController {
     if (slug !== undefined) update.slug = slug.trim();
     if (name !== undefined) update.name = name;
     if (defaultEnv !== undefined) update.defaultEnv = defaultEnv;
-    if (retentionDays !== undefined) update.retentionDays = retentionDays;
+    if (retentionDays !== undefined) {
+      if (!Number.isInteger(retentionDays) || retentionDays < 0 || retentionDays > 3650) {
+        return reply.status(400).send({ error: "retentionDays must be a whole number of days (0 = keep forever)" });
+      }
+      update.retentionDays = retentionDays;
+    }
 
     const org = await upsertOrg(user.org, update);
     if (update.slug && update.slug !== user.org) {

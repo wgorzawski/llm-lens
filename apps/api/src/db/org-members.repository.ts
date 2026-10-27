@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db, orgMembers, users } from "./index";
 
 export type MemberRole = "owner" | "admin" | "member" | "viewer";
@@ -122,4 +122,13 @@ export async function removeMember(id: string, orgSlug: string) {
 
 export async function removeAllOrgMembers(orgSlug: string) {
   await db.delete(orgMembers).where(eq(orgMembers.orgSlug, orgSlug));
+}
+
+export async function hasPendingInvite(email: string): Promise<boolean> {
+  const rows = await db
+    .select({ id: orgMembers.id })
+    .from(orgMembers)
+    .where(and(sql`lower(${orgMembers.email}) = ${email.toLowerCase()}`, eq(orgMembers.status, "pending")))
+    .limit(1);
+  return rows.length > 0;
 }

@@ -21,7 +21,9 @@ export async function replayTrace(original: UnifiedTrace): Promise<ReplayResult>
   switch (original.metadata.provider) {
     case "openai":
     case "vercel-ai":
-      return replayOpenAI(original, promptMessages);
+      return replayOpenAI(original, promptMessages, OPENAI_TARGET);
+    case "groq":
+      return replayOpenAI(original, promptMessages, GROQ_TARGET);
     case "anthropic":
       return replayAnthropic(original, promptMessages);
     default:
@@ -29,9 +31,34 @@ export async function replayTrace(original: UnifiedTrace): Promise<ReplayResult>
   }
 }
 
-async function replayOpenAI(original: UnifiedTrace, promptMessages: TraceMessage[]): Promise<ReplayResult> {
-  const apiKey = process.env["OPENAI_API_KEY"];
-  if (!apiKey) return { success: false, error: "OPENAI_API_KEY is not configured on the server" };
+interface OpenAICompatibleTarget {
+  provider: "openai" | "groq";
+  label: string;
+  keyEnv: string;
+  url: string;
+}
+
+const OPENAI_TARGET: OpenAICompatibleTarget = {
+  provider: "openai",
+  label: "OpenAI",
+  keyEnv: "OPENAI_API_KEY",
+  url: "https://api.openai.com/v1/chat/completions",
+};
+
+const GROQ_TARGET: OpenAICompatibleTarget = {
+  provider: "groq",
+  label: "Groq",
+  keyEnv: "GROQ_API_KEY",
+  url: "https://api.groq.com/openai/v1/chat/completions",
+};
+
+async function replayOpenAI(
+  original: UnifiedTrace,
+  promptMessages: TraceMessage[],
+  target: OpenAICompatibleTarget
+): Promise<ReplayResult> {
+  const apiKey = process.env[target.keyEnv];
+  if (!apiKey) return { success: false, error: `${target.keyEnv} is not configured on the server` };
 
   const messages = [
     ...(original.metadata.systemPrompt ? [{ role: "system", content: original.metadata.systemPrompt }] : []),
@@ -39,7 +66,7 @@ async function replayOpenAI(original: UnifiedTrace, promptMessages: TraceMessage
   ];
 
   const start = Date.now();
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+  const res = await fetch(target.url, {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -52,11 +79,11 @@ async function replayOpenAI(original: UnifiedTrace, promptMessages: TraceMessage
   const durationMs = Date.now() - start;
   const body = await res.json();
   if (!res.ok) {
-    return { success: false, error: body?.error?.message ?? `OpenAI API error (${res.status})` };
+    return { success: false, error: body?.error?.message ?? `${target.label} API error (${res.status})` };
   }
 
   const choice = body.choices?.[0];
-  if (!choice) return { success: false, error: "OpenAI response had no choices" };
+  if (!choice) return { success: false, error: `${target.label} response had no choices` };
 
   return {
     success: true,
@@ -70,7 +97,8 @@ async function replayOpenAI(original: UnifiedTrace, promptMessages: TraceMessage
       },
       metadata: {
         model: body.model ?? original.metadata.model,
-        provider: "openai",
+        provider: target.provider,
+        name: original.metadata.name,
         durationMs,
         stopReason: choice.finish_reason,
         temperature: original.metadata.temperature,
