@@ -1,4 +1,4 @@
-import { eq, gte, lte, desc, count, and, inArray, sql } from "drizzle-orm";
+import { eq, gte, lte, desc, count, and, inArray, sql, getTableColumns } from "drizzle-orm";
 import { db, traces, traceNotes, client } from "./index";
 import { visibleUserIds, userIdIn } from "./scope";
 import { providerLabel } from "@llm-lens/types";
@@ -24,6 +24,8 @@ export interface ListOptions {
   name?: string;
   env?: string;
   sessionId?: string;
+  /** The raw provider log is big (it repeats the whole prompt) and list views don't need it */
+  includeRaw?: boolean;
   userId: string;
 }
 
@@ -64,6 +66,10 @@ export interface ListResult {
   limit: number;
   offset: number;
 }
+
+const listColumns = Object.fromEntries(
+  Object.entries(getTableColumns(traces)).filter(([key]) => key !== "raw")
+) as Omit<ReturnType<typeof getTableColumns<typeof traces>>, "raw">;
 
 function rowToTrace(row: typeof traces.$inferSelect): UnifiedTrace {
   return {
@@ -138,7 +144,9 @@ export async function listTraces(opts: ListOptions): Promise<ListResult> {
   );
 
   const [rows, [{ value: total }]] = await Promise.all([
-    db.select().from(traces).where(where).orderBy(sortOrder(opts.sort)).limit(limit).offset(offset),
+    opts.includeRaw
+      ? db.select().from(traces).where(where).orderBy(sortOrder(opts.sort)).limit(limit).offset(offset)
+      : db.select({ ...listColumns, raw: sql<string | null>`NULL` }).from(traces).where(where).orderBy(sortOrder(opts.sort)).limit(limit).offset(offset),
     db.select({ value: count() }).from(traces).where(where),
   ]);
 

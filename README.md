@@ -333,6 +333,7 @@ GET /traces?limit=50&offset=0&provider=anthropic
 | `name` | string | — | Filter by trace name (`metadata.name`) |
 | `env` | string | — | Filter by environment |
 | `sessionId` | string | — | Filter by session |
+| `include` | string | — | `raw` to include each trace's original provider log (left out by default to keep the list small; `GET /traces/:id` always has it) |
 
 Response:
 

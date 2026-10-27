@@ -99,6 +99,7 @@ export class TracesController {
         name?: string;
         env?: string;
         sessionId?: string;
+        include?: string;
       };
     }>
   ) {
@@ -122,7 +123,8 @@ export class TracesController {
     const name = request.query.name || undefined;
     const env = request.query.env || undefined;
     const sessionId = request.query.sessionId || undefined;
-    return listTraces({ limit, offset, provider, model, status, latency, from, to, q, sort, name, env, sessionId, userId });
+    const includeRaw = request.query.include === "raw";
+    return listTraces({ limit, offset, provider, model, status, latency, from, to, q, sort, name, env, sessionId, includeRaw, userId });
   }
 
   /** Distinct trace names, environments and models - for filter dropdowns */
