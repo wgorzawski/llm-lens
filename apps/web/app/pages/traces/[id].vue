@@ -181,6 +181,10 @@ const timeline = computed(() => {
 const rawJsonHtml = computed(() => highlightJson(trace.value ?? {}));
 const rawLineCount = computed(() => JSON.stringify(trace.value, null, 2).split("\n").length);
 const status = computed(() => trace.value ? traceStatus(trace.value) : { ok: true, label: "200 OK" });
+const hasContext = computed(() => {
+  const m = trace.value?.metadata;
+  return !!m && !!(m.name || m.env || m.sessionId || m.endUserId || m.tags?.length);
+});
 
 
 function copyId() {
@@ -236,7 +240,7 @@ function downloadJson() {
               <AppIcon name="chevron-down" :size="10" class="back-chevron" /> Traces
             </NuxtLink>
             <span class="sep">/</span>
-            <span class="here">{{ trace.metadata.model.split("-")[0] }}_{{ trace.id.slice(-8) }}</span>
+            <span class="here">{{ traceName(trace) }}</span>
           </div>
 
           <!-- title row + actions -->
@@ -245,7 +249,8 @@ function downloadJson() {
               <div class="dh-title-row">
                 <span :class="`prov prov-${trace.metadata.provider}`" style="font-size:10px">{{ trace.metadata.provider }}</span>
                 <span class="model" style="font-size:13px">{{ trace.metadata.model }}</span>
-                <span class="dh-title">{{ trace.metadata.model.split("-")[0] }}_{{ trace.id.slice(-8) }}</span>
+                <span class="dh-title">{{ traceName(trace) }}</span>
+                <span v-if="trace.metadata.env" class="marker sys" style="font-size:9px">{{ trace.metadata.env }}</span>
               </div>
               <div class="dh-title-row" style="gap:8px;flex-wrap:wrap">
                 <span class="dh-id" title="Copy ID" @click="copyId">{{ trace.id }}</span>
@@ -326,6 +331,12 @@ function downloadJson() {
               </span>
               <span class="ms">{{ toolNames.join(', ') || 'none' }}</span>
             </div>
+          </div>
+
+          <div v-if="trace.metadata.error" class="trace-error" role="alert">
+            <AppIcon name="warn" :size="13" />
+            <span class="trace-error-code">{{ status.label }}</span>
+            <span class="trace-error-msg">{{ trace.metadata.error }}</span>
           </div>
         </div>
 
@@ -436,6 +447,18 @@ function downloadJson() {
 
               <!-- ─ Inspector tab ─ -->
               <template v-if="inspectorTab === 'inspector'">
+                <div v-if="hasContext" class="is-section">
+                  <div class="is-label">Context</div>
+                  <div v-if="trace.metadata.name" class="is-row"><span class="k">name</span><span class="v copyable">{{ trace.metadata.name }}</span></div>
+                  <div v-if="trace.metadata.env" class="is-row"><span class="k">env</span><span class="v">{{ trace.metadata.env }}</span></div>
+                  <div v-if="trace.metadata.sessionId" class="is-row">
+                    <span class="k">session</span>
+                    <NuxtLink class="v copyable" :to="{ path: '/', query: { sessionId: trace.metadata.sessionId } }" :title="'Show all traces of this session'">{{ trace.metadata.sessionId }}</NuxtLink>
+                  </div>
+                  <div v-if="trace.metadata.endUserId" class="is-row"><span class="k">user</span><span class="v copyable">{{ trace.metadata.endUserId }}</span></div>
+                  <div v-if="trace.metadata.tags?.length" class="is-row"><span class="k">tags</span><span class="v">{{ trace.metadata.tags.join(', ') }}</span></div>
+                </div>
+
                 <div class="is-section">
                   <div class="is-label">Request</div>
                   <div class="is-row">
@@ -500,6 +523,14 @@ function downloadJson() {
                 <div v-if="trace.metadata.systemPrompt" class="is-section">
                   <div class="is-label">System prompt</div>
                   <div class="sys-preview">{{ trace.metadata.systemPrompt }}</div>
+                </div>
+
+                <div v-if="trace.metadata.reasoning" class="is-section">
+                  <div class="is-label">Reasoning{{ trace.metadata.reasoningTokens ? ` · ${trace.metadata.reasoningTokens} tokens` : '' }}</div>
+                  <details class="reasoning">
+                    <summary>Show the model's hidden reasoning</summary>
+                    <div class="sys-preview">{{ trace.metadata.reasoning }}</div>
+                  </details>
                 </div>
               </template>
 
@@ -641,6 +672,14 @@ function downloadJson() {
 .dh-actions { display: flex; gap: 4px; align-items: center; flex-shrink: 0; }
 
 /* ── Meta strip ── */
+.trace-error {
+  display: flex; align-items: center; gap: 8px; margin-top: 12px; padding: 8px 12px;
+  border: 1px solid var(--danger); border-radius: 6px; color: var(--danger);
+  background: color-mix(in oklch, var(--danger) 8%, transparent); font-size: 12px;
+}
+.trace-error-code { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; white-space: nowrap; }
+.trace-error-msg { color: var(--text); overflow-wrap: anywhere; }
+.reasoning summary { cursor: pointer; font-size: 11px; color: var(--text-2); margin-bottom: 6px; }
 .meta-strip {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
@@ -952,6 +991,7 @@ function downloadJson() {
 .prov-anthropic { color: var(--provider-anthropic); background: var(--provider-anthropic-bg); }
 .prov-openai    { color: var(--provider-openai);    background: var(--provider-openai-bg); }
 .prov-vercel-ai { color: var(--provider-vercel);    background: var(--provider-vercel-bg); }
+.prov-groq      { color: var(--provider-groq);      background: var(--provider-groq-bg); }
 
 /* ── Model name ── */
 .model { font-family: var(--font-mono); color: var(--text-0); }

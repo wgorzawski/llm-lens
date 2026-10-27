@@ -11,7 +11,7 @@ function savePreference(update: Record<string, unknown>, message: string) {
 }
 
 const maskPII = computed({
-  get: () => (me.value?.preferences?.maskPII as boolean | undefined) ?? true,
+  get: () => (me.value?.preferences?.maskPII as boolean | undefined) ?? false,
   set: (val: boolean) => savePreference({ maskPII: val }, val ? "PII masking turned on" : "PII masking turned off"),
 });
 const shareData = computed({
@@ -27,7 +27,7 @@ async function setRetention(days: number) {
   try {
     const updated = await updateOrg({ retentionDays: days });
     retention.value = updated.retentionDays;
-    toast.success(`Traces are now kept for ${days} ${days === 1 ? "day" : "days"}`);
+    toast.success(days === 0 ? "Traces are now kept forever" : `Traces are now kept for ${days} ${days === 1 ? "day" : "days"}`);
   } catch (err) {
     toast.error(err);
   } finally {
@@ -78,27 +78,28 @@ async function downloadUsageExport() {
   <section class="set-section">
     <div class="set-section-head"><div>
       <div class="set-section-title">Retention</div>
-      <div class="set-section-sub">How long we keep your trace payloads. Aggregates and metrics are kept forever.</div>
+      <div class="set-section-sub">How long traces are kept. Dashboards are computed from stored traces.</div>
     </div></div>
     <div class="set-section-body">
       <div class="set-row">
         <div class="set-row-label">
           <div class="set-row-label-text">Trace retention</div>
-          <div class="set-row-hint">Free tier allows up to 7 days. Team allows 30, Enterprise up to 365.</div>
+          <div class="set-row-hint">Traces older than this are deleted once a day.</div>
         </div>
         <div class="set-row-control">
           <div class="segmented">
             <button :class="{ active: retention === 1 }" :disabled="savingRetention" @click="setRetention(1)">1 day</button>
             <button :class="{ active: retention === 7 }" :disabled="savingRetention" @click="setRetention(7)">7 days</button>
-            <button style="opacity:0.45" disabled>30 days</button>
-            <button style="opacity:0.45" disabled>365 days</button>
+            <button :class="{ active: retention === 30 }" :disabled="savingRetention" @click="setRetention(30)">30 days</button>
+            <button :class="{ active: retention === 365 }" :disabled="savingRetention" @click="setRetention(365)">365 days</button>
+            <button :class="{ active: retention === 0 }" :disabled="savingRetention" @click="setRetention(0)">Forever</button>
           </div>
         </div>
       </div>
       <div class="set-row">
         <div class="set-row-label">
           <div class="set-row-label-text">PII masking</div>
-          <div class="set-row-hint">Automatically redact emails, phone numbers, and credit cards in trace payloads.</div>
+          <div class="set-row-hint">Replace e-mails, phone numbers and card numbers with placeholders in new traces, before they are stored.</div>
         </div>
         <div class="set-row-control">
           <button class="toggle" :class="{ on: maskPII }" role="switch" @click="maskPII = !maskPII as boolean"><span class="thumb" /></button>

@@ -15,7 +15,7 @@ export interface DashboardV2 {
     p95: number[];
     p99: number[];
     errs: number[];
-    split: Array<{ anthropic: number; openai: number; "vercel-ai": number }>;
+    split: Array<{ anthropic: number; openai: number; "vercel-ai": number; groq?: number }>;
   };
   kpis: {
     spend: number; spendDelta: number; spendSpark: number[];

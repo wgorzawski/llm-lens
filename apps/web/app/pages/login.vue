@@ -26,6 +26,7 @@ const pendingToken = ref<string | null>(null)
 const twoFactorCode = ref('')
 
 const toast = useToast()
+const registrationEnabled = useRuntimeConfig().public.registrationEnabled !== false
 
 // Messages from redirects that may happen during SSR, where snackbars can't be shown:
 // OAuth failures (?error=oauth_failed) and expired sessions (session_expired cookie,
@@ -34,6 +35,8 @@ const sessionExpired = useCookie<string | null>('session_expired')
 onMounted(() => {
   if (useRoute().query.error === 'oauth_failed') {
     toast.error("Sign-in with Google or GitHub didn't work - please try again")
+  } else if (useRoute().query.error === 'registration_closed') {
+    toast.error('Sign-ups are closed on this instance - ask the owner for an invite')
   } else if (sessionExpired.value) {
     toast.info('Your session has expired - please sign in again')
   }
@@ -95,7 +98,7 @@ function onKeydown(e: KeyboardEvent) {
     <div class="auth-right">
       <!-- Top nav -->
       <div class="auth-topnav">
-        <span>No account? <NuxtLink to="/register">Sign up</NuxtLink></span>
+        <span v-if="registrationEnabled">No account? <NuxtLink to="/register">Sign up</NuxtLink></span>
       </div>
 
       <!-- 2FA step -->
@@ -154,7 +157,7 @@ function onKeydown(e: KeyboardEvent) {
         </div>
 
         <h2 class="auth-h">Sign in</h2>
-        <p class="auth-sub">Welcome back. <NuxtLink to="/register">Create an account →</NuxtLink></p>
+        <p class="auth-sub">Welcome back.<template v-if="registrationEnabled"> <NuxtLink to="/register">Create an account →</NuxtLink></template></p>
 
         <!-- SSO -->
         <div class="sso-grid">

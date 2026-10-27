@@ -21,6 +21,7 @@ function fmtDelta(d: number) { return `${d >= 0 ? "▲" : "▼"} ${Math.abs(d).t
 function provColor(id: string) {
   if (id === "anthropic") return "var(--provider-anthropic)";
   if (id === "openai") return "var(--provider-openai)";
+  if (id === "groq") return "var(--provider-groq)";
   return "var(--provider-vercel)";
 }
 
@@ -66,7 +67,7 @@ const heroYTicks = computed(() => {
     return [`$${mx.toFixed(2)}`, `$${(mx / 2).toFixed(2)}`, "$0"];
   }
   if (metric.value === "reqs") {
-    const totals = S.split.map((s) => s.anthropic + s.openai + s["vercel-ai"]);
+    const totals = S.split.map((s) => s.anthropic + s.openai + s["vercel-ai"] + (s.groq ?? 0));
     const mx = Math.max(...totals, 1);
     return [String(mx), String(Math.round(mx / 2)), "0"];
   }
@@ -99,14 +100,14 @@ function stackedBarsPath() {
   const n = S.split.length;
   const slot = W / n;
   const bw = slot * 0.62;
-  const totals = S.split.map((s) => s.anthropic + s.openai + s["vercel-ai"]);
+  const totals = S.split.map((s) => s.anthropic + s.openai + s["vercel-ai"] + (s.groq ?? 0));
   const max = Math.max(...totals, 1);
-  const ORDER: Array<"anthropic" | "openai" | "vercel-ai"> = ["anthropic", "openai", "vercel-ai"];
+  const ORDER: Array<"anthropic" | "openai" | "vercel-ai" | "groq"> = ["anthropic", "openai", "vercel-ai", "groq"];
   const result: Array<{ x: number; y: number; h: number; w: number; provider: string }> = [];
   S.split.forEach((s, i) => {
     let acc = 0;
     ORDER.forEach((k) => {
-      const h = (s[k] / max) * (H - PAD);
+      const h = ((s[k] ?? 0) / max) * (H - PAD);
       if (h > 0) {
         result.push({ x: i * slot + (slot - bw) / 2, y: H - acc - h, h: Math.max(0, h), w: bw, provider: k });
         acc += h;
@@ -379,6 +380,7 @@ v-for="m in ['cost','reqs','latency','errors']" :key="m"
               <span class="leg"><span class="leg-sw" style="background:var(--provider-anthropic)" />anthropic</span>
               <span class="leg"><span class="leg-sw" style="background:var(--provider-openai)" />openai</span>
               <span class="leg"><span class="leg-sw" style="background:var(--provider-vercel)" />vercel-ai</span>
+              <span class="leg"><span class="leg-sw" style="background:var(--provider-groq)" />groq</span>
             </div>
 
             <!-- Plot area -->

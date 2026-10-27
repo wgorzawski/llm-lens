@@ -101,6 +101,8 @@ onUnmounted(() => document.removeEventListener("keydown", onKeydown));
         </div>
         <div class="col-snippet">
           <span class="markers" style="margin-right:6px">
+            <span v-if="errorMarker(t)" class="marker err" :title="t.metadata.error">{{ errorMarker(t) }}</span>
+            <span v-if="t.metadata.env && t.metadata.env !== 'production'" class="marker sys">{{ t.metadata.env }}</span>
             <span v-if="hasSystem(t)" class="marker sys">SYS</span>
             <span v-if="toolCallCount(t) > 0" class="marker tool">
               <AppIcon name="tool" :size="9" />{{ toolCallCount(t) }}

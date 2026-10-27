@@ -11,6 +11,8 @@
   --provider-anthropic:    oklch(0.78 0.12 60);
   --provider-openai:       oklch(0.74 0.13 155);
   --provider-vercel:       oklch(0.72 0.16 280);
+  --provider-groq:         oklch(0.70 0.17 30);
+  --provider-groq-bg:      oklch(0.70 0.17 30 / 0.14);
   --provider-anthropic-bg: oklch(0.78 0.12 60 / 0.14);
   --provider-openai-bg:    oklch(0.74 0.13 155 / 0.14);
   --provider-vercel-bg:    oklch(0.72 0.16 280 / 0.14);
@@ -62,6 +64,8 @@
   --provider-anthropic:    oklch(0.54 0.14 60);
   --provider-openai:       oklch(0.46 0.14 155);
   --provider-vercel:       oklch(0.46 0.18 280);
+  --provider-groq:         oklch(0.52 0.18 30);
+  --provider-groq-bg:      oklch(0.70 0.17 30 / 0.18);
   --provider-anthropic-bg: oklch(0.78 0.12 60 / 0.20);
   --provider-openai-bg:    oklch(0.74 0.13 155 / 0.18);
   --provider-vercel-bg:    oklch(0.72 0.16 280 / 0.18);

@@ -7,12 +7,14 @@ const label: Record<TraceProvider, string> = {
   anthropic: "Anthropic",
   openai: "OpenAI",
   "vercel-ai": "Vercel AI",
+  groq: "Groq",
 };
 
 const cls: Record<TraceProvider, string> = {
   anthropic: "bg-amber-100 text-amber-800 border-amber-300",
   openai: "bg-emerald-100 text-emerald-800 border-emerald-300",
   "vercel-ai": "bg-indigo-100 text-indigo-800 border-indigo-300",
+  groq: "bg-orange-100 text-orange-800 border-orange-300",
 };
 </script>
 

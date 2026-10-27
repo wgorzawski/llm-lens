@@ -1,3 +1,4 @@
+import { escHtml } from "./json-highlight";
 import type { UnifiedTrace } from "@llm-lens/types";
 
 export function fmtN(v: number | null | undefined): string {
@@ -43,15 +44,24 @@ export function getRelative(ts: string | number): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
+/** Minimal markdown (bold + line breaks) for v-html - the text is HTML-escaped first */
 export function renderMd(text: string): string {
-  return text
+  return escHtml(text)
     .split("\n")
     .map(line => line.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>"))
     .join("<br>");
 }
 
 export function traceName(t: UnifiedTrace): string {
-  return `${t.metadata.model.split("-")[0]}_${t.id.slice(-8)}`;
+  if (t.metadata.name) return t.metadata.name;
+  return `${t.metadata.model.split("/").pop()!.split("-")[0]}_${t.id.slice(-8)}`;
+}
+
+/** Short failure label for list markers, e.g. "429" or "ERR" - null for successful traces */
+export function errorMarker(t: UnifiedTrace): string | null {
+  const code = t.metadata.statusCode ?? 200;
+  if (!t.metadata.error && code < 400) return null;
+  return code >= 400 && code !== 599 ? String(code) : "ERR";
 }
 
 export function toolCallCount(t: UnifiedTrace): number {
@@ -63,7 +73,10 @@ export function hasSystem(t: UnifiedTrace): boolean {
 }
 
 export function traceStatus(t: UnifiedTrace): { ok: boolean; label: string } {
-  if (t.metadata.error) return { ok: false, label: t.metadata.error };
   const code = t.metadata.statusCode ?? 200;
+  if (t.metadata.error || code >= 400) {
+    if (code === 599) return { ok: false, label: "Network error" };
+    return { ok: false, label: `${code} ${t.metadata.errorCode ?? "Error"}` };
+  }
   return { ok: code < 400, label: `${code} ${code < 400 ? "OK" : "Error"}` };
 }

@@ -527,6 +527,7 @@ v-for="c in candidates" :key="c.id"
 .prov-anthropic.rp-provider { background: var(--provider-anthropic); }
 .prov-openai.rp-provider    { background: var(--provider-openai); }
 .prov-vercel-ai.rp-provider { background: var(--provider-vercel); }
+.prov-groq.rp-provider      { background: var(--provider-groq); }
 .rp-model { font-size: .72rem; color: var(--text-0); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rp-hint  { font-size: .65rem; color: var(--text-3); white-space: nowrap; }
 .rp-empty { padding: 12px; font-size: .72rem; color: var(--text-3); text-align: center; }
@@ -631,6 +632,7 @@ v-for="c in candidates" :key="c.id"
 .prov-anthropic { color: var(--provider-anthropic); background: var(--provider-anthropic-bg); }
 .prov-openai    { color: var(--provider-openai);    background: var(--provider-openai-bg); }
 .prov-vercel-ai { color: var(--provider-vercel);    background: var(--provider-vercel-bg); }
+.prov-groq      { color: var(--provider-groq);      background: var(--provider-groq-bg); }
 
 /* ── diff text ── */
 .diff-text { font-size: .75rem; line-height: 1.7; white-space: pre-wrap; word-break: break-word; color: var(--text-1); }

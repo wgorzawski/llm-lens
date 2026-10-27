@@ -14,6 +14,7 @@
 .prov-openai    { color: var(--provider-openai);    background: var(--provider-openai-bg); }
 .prov-vercel    { color: var(--provider-vercel);    background: var(--provider-vercel-bg); }
 .prov-vercel-ai { color: var(--provider-vercel);    background: var(--provider-vercel-bg); }
+.prov-groq      { color: var(--provider-groq);      background: var(--provider-groq-bg); }
 .model { font-family: var(--font-mono); font-size: 12px; color: var(--text-0); white-space: nowrap; }
 
 /* ── Markers / tags ── */
@@ -29,6 +30,7 @@
 }
 .marker.tool { color: var(--warn); border-color: var(--provider-anthropic-bg); }
 .marker.sys  { color: var(--accent); border-color: var(--accent-border); }
+.marker.err  { color: var(--danger); border-color: var(--danger); }
 .tag {
   display: inline-flex; align-items: center; gap: 3px;
   font-family: var(--font-mono); font-size: 10px;

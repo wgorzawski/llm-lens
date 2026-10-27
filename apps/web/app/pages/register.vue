@@ -6,6 +6,7 @@ useHead({ htmlAttrs: { 'data-theme': 'dark' } })
 const { register } = useAuth()
 const config = useRuntimeConfig()
 const apiBase = config.public.apiBase as string
+const registrationEnabled = config.public.registrationEnabled !== false
 
 const name = ref('')
 const workspace = ref('')
@@ -85,7 +86,9 @@ function onKeydown(e: KeyboardEvent) {
 
         <h2 class="auth-h">Create your account</h2>
         <p class="auth-sub">
-          Free for personal use, forever. <NuxtLink to="/login">Sign in instead →</NuxtLink>
+          <template v-if="registrationEnabled">Free for personal use, forever.</template>
+          <template v-else>Sign-ups on this instance are by invitation only.</template>
+          <NuxtLink to="/login">Sign in instead →</NuxtLink>
         </p>
 
         <!-- SSO -->

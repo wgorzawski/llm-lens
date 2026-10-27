@@ -34,6 +34,10 @@ const filterRange = ref("30d");
 const customFrom = ref("");
 const customTo = ref("");
 const sort = ref("recent");
+const filterName = ref("all");
+const filterEnv = ref("all");
+const route = useRoute();
+const filterSession = ref(typeof route.query.sessionId === "string" ? route.query.sessionId : "");
 const selected = ref<Set<string>>(new Set());
 const showTip = ref(true);
 const searchQuery = ref("");
@@ -73,9 +77,13 @@ const { page, pending, error, fetchTraces, deleteOne, deleteMany, setStarred } =
   },
   get q() { return debouncedQuery.value || undefined; },
   get sort() { return sort.value; },
+  get name() { return filterName.value === "all" ? undefined : filterName.value; },
+  get env() { return filterEnv.value === "all" ? undefined : filterEnv.value; },
+  get sessionId() { return filterSession.value || undefined; },
 });
 
-await fetchTraces();
+const { facets, fetchFacets } = useTraceFacets();
+await Promise.all([fetchTraces(), fetchFacets()]);
 
 const traceCount = useState("trace-count", () => 0);
 watch(page, () => { traceCount.value = page.value.total; }, { immediate: true });
@@ -86,6 +94,14 @@ watch(filterLatency, () => fetchTraces(0));
 watch(filterRange, () => { if (filterRange.value !== "custom") fetchTraces(0); });
 watch([customFrom, customTo], () => { if (filterRange.value === "custom") fetchTraces(0); });
 watch(sort, () => fetchTraces(0));
+watch(filterName, () => fetchTraces(0));
+watch(filterEnv, () => fetchTraces(0));
+watch(filterSession, () => fetchTraces(0));
+watch(() => route.query.sessionId, (v) => { filterSession.value = typeof v === "string" ? v : ""; });
+function clearSession() {
+  filterSession.value = "";
+  void navigateTo({ path: "/", query: { ...route.query, sessionId: undefined } }, { replace: true });
+}
 watch(debouncedQuery, () => fetchTraces(0));
 
 // ── computed ──────────────────────────────────────────────────────────────────
@@ -187,15 +203,20 @@ const providerOptions = [
   { id: "anthropic", label: "Anthropic",  swatch: "anthropic" },
   { id: "openai",    label: "OpenAI",     swatch: "openai" },
   { id: "vercel-ai", label: "Vercel AI",  swatch: "vercel-ai" },
+  { id: "groq",      label: "Groq",       swatch: "groq" },
 ];
-const modelOptions = [
-  { id: "all",                   label: "All models" },
-  { id: "claude-opus-4-7",       label: "claude-opus-4-7",       hint: "anthropic" },
-  { id: "claude-sonnet-4-6",     label: "claude-sonnet-4-6",     hint: "anthropic" },
-  { id: "claude-haiku-4-5",      label: "claude-haiku-4-5",      hint: "anthropic" },
-  { id: "gpt-4o-2024-08-06",     label: "gpt-4o-2024-08-06",     hint: "openai" },
-  { id: "gpt-4o-mini",           label: "gpt-4o-mini",           hint: "openai · vercel" },
-];
+const modelOptions = computed(() => [
+  { id: "all", label: "All models" },
+  ...facets.value.models.map((m) => ({ id: m.model, label: m.model, hint: String(m.count) })),
+]);
+const nameOptions = computed(() => [
+  { id: "all", label: "All features" },
+  ...facets.value.names.map((n) => ({ id: n.name, label: n.name, hint: String(n.count) })),
+]);
+const envOptions = computed(() => [
+  { id: "all", label: "All environments" },
+  ...facets.value.envs.map((e) => ({ id: e.env, label: e.env, hint: String(e.count) })),
+]);
 const statusOptions = [
   { id: "all",  label: "All statuses" },
   { id: "ok",   label: "OK",      dot: "ok"   as const },
@@ -215,6 +236,7 @@ const rangeOptions = [
   { id: "24h",    label: "Last 24h" },
   { id: "7d",     label: "Last 7 days" },
   { id: "30d",    label: "Last 30 days" },
+  { id: "all",    label: "All time" },
   { id: "_div",   label: "",  divider: true },
   { id: "custom", label: "Custom range…" },
 ];
@@ -271,6 +293,27 @@ const sortOptions = [
           :width="230"
           @change="filterModel = $event"
         />
+        <FilterChip
+          v-if="facets.names.length"
+          label="Feature"
+          :value="filterName"
+          default-value="all"
+          :options="nameOptions"
+          :width="230"
+          @change="filterName = $event"
+        />
+        <FilterChip
+          v-if="facets.envs.length > 1"
+          label="Env"
+          :value="filterEnv"
+          default-value="all"
+          :options="envOptions"
+          :width="190"
+          @change="filterEnv = $event"
+        />
+        <button v-if="filterSession" class="session-chip" title="Clear session filter" @click="clearSession">
+          session {{ filterSession.slice(0, 12) }} <AppIcon name="x" :size="10" />
+        </button>
         <FilterChip
           label="Status"
           :value="filterStatus"
@@ -528,6 +571,11 @@ const sortOptions = [
   white-space: nowrap;
 }
 .chip-plain:hover { color: var(--text-0); border-color: var(--border-2); }
+.session-chip {
+  display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px;
+  border: 1px solid var(--accent-border); border-radius: 6px; background: transparent;
+  color: var(--accent); font-family: var(--font-mono); font-size: 11px; cursor: pointer;
+}
 .custom-range {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 0 6px; height: 24px;

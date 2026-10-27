@@ -4,7 +4,7 @@ import { register, registerAndSeed } from "./helpers";
 // ── Data retention preferences ─────────────────────────────────────────────────
 
 test.describe("Settings — PII masking toggle", () => {
-  test("toggles off and persists after reload", async ({ page }) => {
+  test("toggles on and persists after reload", async ({ page }) => {
     await register(page);
     await page.goto("/settings", { waitUntil: "networkidle" });
     await page.locator(".set-nav-item", { hasText: "Data retention" }).click();
@@ -12,36 +12,36 @@ test.describe("Settings — PII masking toggle", () => {
 
     // Find PII masking toggle (first toggle in data retention)
     const toggle = page.locator("button.toggle[role='switch']").nth(0);
-    await expect(toggle).toHaveClass(/on/, { timeout: 5_000 }); // default true
+    await expect(toggle).not.toHaveClass(/on/, { timeout: 5_000 }); // default off
 
     await toggle.click();
     await page.waitForTimeout(500);
-    await expect(toggle).not.toHaveClass(/on/);
-
-    await page.reload({ waitUntil: "networkidle" });
-    await page.locator(".set-nav-item", { hasText: "Data retention" }).click();
-    await page.waitForLoadState("networkidle");
-
-    await expect(page.locator("button.toggle[role='switch']").nth(0)).not.toHaveClass(/on/, { timeout: 5_000 });
-  });
-
-  test("re-enabling PII masking persists", async ({ page }) => {
-    await register(page);
-    await page.goto("/settings", { waitUntil: "networkidle" });
-    await page.locator(".set-nav-item", { hasText: "Data retention" }).click();
-    await page.waitForLoadState("networkidle");
-
-    const toggle = page.locator("button.toggle[role='switch']").nth(0);
-    await toggle.click(); // off
-    await page.waitForTimeout(400);
-    await toggle.click(); // back on
-    await page.waitForTimeout(500);
+    await expect(toggle).toHaveClass(/on/);
 
     await page.reload({ waitUntil: "networkidle" });
     await page.locator(".set-nav-item", { hasText: "Data retention" }).click();
     await page.waitForLoadState("networkidle");
 
     await expect(page.locator("button.toggle[role='switch']").nth(0)).toHaveClass(/on/, { timeout: 5_000 });
+  });
+
+  test("turning PII masking off again persists", async ({ page }) => {
+    await register(page);
+    await page.goto("/settings", { waitUntil: "networkidle" });
+    await page.locator(".set-nav-item", { hasText: "Data retention" }).click();
+    await page.waitForLoadState("networkidle");
+
+    const toggle = page.locator("button.toggle[role='switch']").nth(0);
+    await toggle.click(); // on
+    await page.waitForTimeout(400);
+    await toggle.click(); // back off
+    await page.waitForTimeout(500);
+
+    await page.reload({ waitUntil: "networkidle" });
+    await page.locator(".set-nav-item", { hasText: "Data retention" }).click();
+    await page.waitForLoadState("networkidle");
+
+    await expect(page.locator("button.toggle[role='switch']").nth(0)).not.toHaveClass(/on/, { timeout: 5_000 });
   });
 });
 

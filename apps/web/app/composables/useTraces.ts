@@ -16,6 +16,9 @@ export function useTraces(opts?: {
   to?: string;
   q?: string;
   sort?: string;
+  name?: string;
+  env?: string;
+  sessionId?: string;
   limit?: number;
 }) {
   const { apiFetch } = useApiFetch();
@@ -36,6 +39,9 @@ export function useTraces(opts?: {
     if (opts?.to) params.set("to", opts.to);
     if (opts?.q) params.set("q", opts.q);
     if (opts?.sort) params.set("sort", opts.sort);
+    if (opts?.name) params.set("name", opts.name);
+    if (opts?.env) params.set("env", opts.env);
+    if (opts?.sessionId) params.set("sessionId", opts.sessionId);
 
     const result = await run(() => apiFetch<TracesPage>(`/traces?${params}`));
     if (result) page.value = result;
@@ -58,4 +64,24 @@ export function useTraces(opts?: {
   }
 
   return { page, pending, error, fetchTraces, deleteOne, deleteMany, setStarred };
+}
+
+export interface TraceFacets {
+  names: Array<{ name: string; count: number }>;
+  envs: Array<{ env: string; count: number }>;
+  models: Array<{ model: string; count: number }>;
+}
+
+/** Distinct names, environments and models of the user's traces, for the filter chips */
+export function useTraceFacets() {
+  const { apiFetch } = useApiFetch();
+  const facets = ref<TraceFacets>({ names: [], envs: [], models: [] });
+  async function fetchFacets() {
+    try {
+      facets.value = await apiFetch<TraceFacets>("/traces/facets");
+    } catch {
+      /* filters just stay empty */
+    }
+  }
+  return { facets, fetchFacets };
 }
