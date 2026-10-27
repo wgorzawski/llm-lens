@@ -4,6 +4,7 @@ name: Deploy Yumio (production)
 # Runs on the same server as the demo, next to it: own directory, ports, database and
 # PM2 processes (llm-lens-yumio-api / llm-lens-yumio-web). Sign-ups are closed, traces
 # are kept forever by default and the database is snapshotted daily to data/backups.
+# Needs only the DEMO_SSH_* secrets (same server); optional YUMIO_GROQ_API_KEY enables Replay.
 
 on:
   workflow_dispatch:
@@ -74,8 +75,11 @@ jobs:
         run: |
           $SSH_CMD "mkdir -p $DEPLOY_DIR/data/uploads $DEPLOY_DIR/data/backups"
 
+          # The JWT secret is generated once on the server and never leaves it
+          # (data/.jwt-secret, next to the database it protects).
+          $SSH_CMD "cd $DEPLOY_DIR/data && [ -s .jwt-secret ] || (umask 077 && openssl rand -hex 32 > .jwt-secret)"
+
           cat > /tmp/api.env << EOF
-          JWT_SECRET=${{ secrets.YUMIO_JWT_SECRET }}
           DATABASE_URL=file:$DEPLOY_DIR/data/llm-lens.db
           UPLOADS_DIR=$DEPLOY_DIR/data/uploads
           BACKUP_DIR=$DEPLOY_DIR/data/backups
@@ -99,6 +103,7 @@ jobs:
 
           rsync -az -e "$RSYNC_SSH" /tmp/api.env \
             ${{ secrets.DEMO_SSH_USER }}@${{ secrets.DEMO_SSH_HOST }}:$DEPLOY_DIR/.env.llm-lens-api
+          $SSH_CMD "cd $DEPLOY_DIR && umask 077 && echo JWT_SECRET=\$(cat data/.jwt-secret) >> .env.llm-lens-api"
           rsync -az -e "$RSYNC_SSH" /tmp/web.env \
             ${{ secrets.DEMO_SSH_USER }}@${{ secrets.DEMO_SSH_HOST }}:$DEPLOY_DIR/.env.llm-lens-web
           rm /tmp/api.env /tmp/web.env
