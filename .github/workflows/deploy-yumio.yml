@@ -1,0 +1,152 @@
+name: Deploy Yumio (production)
+
+# Production LLM Lens instance that records Yumio's LLM calls (llmlens.yumio.food).
+# Runs on the same server as the demo, next to it: own directory, ports, database and
+# PM2 processes (llm-lens-yumio-api / llm-lens-yumio-web). Sign-ups are closed, traces
+# are kept forever by default and the database is snapshotted daily to data/backups.
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-yumio
+  cancel-in-progress: false
+
+env:
+  DEPLOY_DIR: /home/mikrus/llm-lens-yumio
+  API_PORT: "3042"
+  WEB_PORT: "3041"
+  PUBLIC_WEB_URL: https://llmlens.yumio.food
+  PUBLIC_API_URL: https://llmlens-api.yumio.food
+
+jobs:
+  build-and-deploy:
+    name: Build & Deploy to Mikrus
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: ".nvmrc"
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared packages
+        run: |
+          pnpm --filter @llm-lens/types build
+          pnpm --filter @llm-lens/parsers build
+          pnpm --filter @llm-lens/instrument build
+
+      - name: Test
+        run: |
+          pnpm --filter @llm-lens/parsers test
+          pnpm --filter @llm-lens/instrument test
+
+      - name: Build API
+        run: pnpm --filter @llm-lens/api build
+
+      # Nuxt is built on CI - the server has too little memory for it
+      - name: Build web
+        run: pnpm --filter @llm-lens/web build
+        env:
+          NUXT_PUBLIC_API_BASE: ${{ env.PUBLIC_API_URL }}/api
+          NUXT_PUBLIC_REGISTRATION_ENABLED: "false"
+          NODE_OPTIONS: "--max-old-space-size=6144"
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEMO_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -p ${{ secrets.DEMO_SSH_PORT }} ${{ secrets.DEMO_SSH_HOST }} >> ~/.ssh/known_hosts
+          echo "SSH_CMD=ssh -i ~/.ssh/deploy_key -p ${{ secrets.DEMO_SSH_PORT }} ${{ secrets.DEMO_SSH_USER }}@${{ secrets.DEMO_SSH_HOST }}" >> $GITHUB_ENV
+          echo "RSYNC_SSH=ssh -i ~/.ssh/deploy_key -p ${{ secrets.DEMO_SSH_PORT }}" >> $GITHUB_ENV
+
+      # .env files live at fixed paths outside apps/ (wiped on every deploy);
+      # deploy.sh copies them into place.
+      - name: Create .env files on server
+        run: |
+          $SSH_CMD "mkdir -p $DEPLOY_DIR/data/uploads $DEPLOY_DIR/data/backups"
+
+          cat > /tmp/api.env << EOF
+          JWT_SECRET=${{ secrets.YUMIO_JWT_SECRET }}
+          DATABASE_URL=file:$DEPLOY_DIR/data/llm-lens.db
+          UPLOADS_DIR=$DEPLOY_DIR/data/uploads
+          BACKUP_DIR=$DEPLOY_DIR/data/backups
+          BACKUP_KEEP_DAYS=14
+          PORT=$API_PORT
+          API_URL=$PUBLIC_API_URL
+          FRONTEND_URL=$PUBLIC_WEB_URL
+          REGISTRATION_ENABLED=false
+          DEFAULT_RETENTION_DAYS=0
+          BODY_LIMIT_MB=10
+          EOF
+          if [ -n "${{ secrets.YUMIO_GROQ_API_KEY }}" ]; then
+            echo "GROQ_API_KEY=${{ secrets.YUMIO_GROQ_API_KEY }}" >> /tmp/api.env
+          fi
+
+          cat > /tmp/web.env << EOF
+          PORT=$WEB_PORT
+          NUXT_PUBLIC_API_BASE=$PUBLIC_API_URL/api
+          NUXT_PUBLIC_REGISTRATION_ENABLED=false
+          EOF
+
+          rsync -az -e "$RSYNC_SSH" /tmp/api.env \
+            ${{ secrets.DEMO_SSH_USER }}@${{ secrets.DEMO_SSH_HOST }}:$DEPLOY_DIR/.env.llm-lens-api
+          rsync -az -e "$RSYNC_SSH" /tmp/web.env \
+            ${{ secrets.DEMO_SSH_USER }}@${{ secrets.DEMO_SSH_HOST }}:$DEPLOY_DIR/.env.llm-lens-web
+          rm /tmp/api.env /tmp/web.env
+
+      - name: Archive build
+        run: |
+          tar czf repo.tar.gz \
+            apps \
+            packages \
+            deploy.sh \
+            ecosystem.config.cjs \
+            package.json \
+            pnpm-lock.yaml \
+            pnpm-workspace.yaml \
+            .nvmrc
+
+      - name: Upload archive
+        run: |
+          rsync -az -e "$RSYNC_SSH" repo.tar.gz \
+            ${{ secrets.DEMO_SSH_USER }}@${{ secrets.DEMO_SSH_HOST }}:$DEPLOY_DIR/repo.tar.gz
+
+      - name: SSH deploy
+        run: |
+          $SSH_CMD bash -s << ENDSSH
+            set -e
+            cd $DEPLOY_DIR
+            # tar doesn't remove files missing from the new archive
+            rm -rf apps packages
+            tar xzf repo.tar.gz
+            rm repo.tar.gz
+            chmod +x deploy.sh
+            ./deploy.sh yumio
+          ENDSSH
+
+      - name: Verify
+        run: |
+          $SSH_CMD bash -s << ENDSSH
+            set -e
+            curl -sf http://localhost:$API_PORT/health
+            echo
+            curl -sf http://localhost:$API_PORT/api/auth/config
+            echo
+            curl -sf -o /dev/null -w "web: HTTP %{http_code}\n" http://localhost:$WEB_PORT/login
+          ENDSSH
+
+      - name: Summary
+        run: |
+          echo "### Yumio LLM Lens deployed" >> $GITHUB_STEP_SUMMARY
+          echo "- UI: $PUBLIC_WEB_URL (port $WEB_PORT)" >> $GITHUB_STEP_SUMMARY
+          echo "- API: $PUBLIC_API_URL (port $API_PORT)" >> $GITHUB_STEP_SUMMARY
+          echo "- Commit: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY

@@ -35,7 +35,9 @@ jobs:
           pnpm --filter @llm-lens/instrument build
 
       - name: Run tests
-        run: pnpm --filter @llm-lens/parsers test
+        run: |
+          pnpm --filter @llm-lens/parsers test
+          pnpm --filter @llm-lens/instrument test
 
       - name: Prepare Nuxt
         run: pnpm --filter @llm-lens/web prepare

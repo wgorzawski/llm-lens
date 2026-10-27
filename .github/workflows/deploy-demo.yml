@@ -144,7 +144,7 @@ jobs:
             rm $DEPLOY_DIR/repo.tar.gz
             chmod +x $DEPLOY_DIR/deploy.sh
             cd $DEPLOY_DIR
-            ./deploy.sh
+            ./deploy.sh demo
 
       # ── verify demo data ──────────────────────────────────────────────────
       # The API seeds and repairs the demo account by itself in DEMO_MODE (at startup
@@ -161,7 +161,7 @@ jobs:
             if [ "${{ inputs.seed }}" = "true" ]; then
               echo "→ wiping demo database"
               rm -f data/demo.db data/demo.db-*
-              pm2 restart llm-lens-api-prod
+              pm2 restart llm-lens-demo-api
             fi
             echo "→ waiting for demo account with data..."
             TOKEN=""
@@ -179,7 +179,7 @@ jobs:
               sleep 5
             done
             echo "✗ demo account still has no data after 5 minutes"
-            pm2 logs llm-lens-api-prod --lines 50 --nostream || true
+            pm2 logs llm-lens-demo-api --lines 50 --nostream || true
             exit 1
           ENDSSH
 

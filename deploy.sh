@@ -3,7 +3,14 @@ set -e
 
 APPS=("api" "web")
 
-echo ">>> Starting deploy for apps ${APPS[@]}"
+# Która instancja: "demo" (publiczne demo) albo "yumio" (produkcja). Pierwszy argument
+# albo plik .instance zostawiony przez poprzedni deploy. Nazwy procesów PM2:
+# llm-lens-<instancja>-api / llm-lens-<instancja>-web (ecosystem.config.cjs czyta .instance).
+INSTANCE="${1:-$(cat .instance 2>/dev/null || echo demo)}"
+echo "$INSTANCE" > .instance
+export LLM_LENS_INSTANCE="$INSTANCE"
+
+echo ">>> Starting deploy of instance '$INSTANCE' for apps ${APPS[@]}"
 
 # 1️⃣ Napraw PATH i wczytaj NVM
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
@@ -76,19 +83,21 @@ CI=true pnpm install --frozen-lockfile --prefer-offline
 
 # 3️⃣ Sprawdza, czy proces faktycznie wstał (PM2 online + odpowiada po HTTP),
 # zamiast ufać samemu "pm2 restart", które zwraca sukces natychmiast po zleceniu restartu.
+# Porty z plików .env (PORT=...), więc każda instancja ma swoje bez zmian w tym skrypcie.
 get_port() {
-  case "$1" in
-    api) echo 3032 ;;
-    web) echo 3031 ;;
-  esac
+  sed -n 's/^PORT=//p' "apps/$1/.env" | tail -n 1
 }
 
 get_process_name() {
-  case "$1" in
-    api) echo "llm-lens-api-prod" ;;
-    web) echo "llm-lens-prod" ;;
-  esac
+  echo "llm-lens-$INSTANCE-$1"
 }
+
+# Stare nazwy procesów demo sprzed podziału na instancje - usuwane przy pierwszym deployu,
+# żeby nie zostały dwa procesy na tych samych portach.
+if [ "$INSTANCE" = "demo" ]; then
+  pm2 delete llm-lens-api-prod 2>/dev/null || true
+  pm2 delete llm-lens-prod 2>/dev/null || true
+fi
 
 wait_for_health() {
   local process_name=$1

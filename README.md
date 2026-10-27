@@ -128,11 +128,12 @@ The SQLite database is created automatically at `./llm-lens.db` on first run.
 
 Each `instrument*` function replaces the relevant `create` method with a thin wrapper. The wrapper:
 
-1. Calls the real provider API as usual and returns the response to your code unchanged
+1. Calls the real provider API and returns the SDK's own promise unchanged - `.withResponse()` and `.asResponse()` keep working
 2. Records the wall-clock duration
 3. Sends the full request + response to llm-lens in the background (fire-and-forget — your code does not wait for this)
+4. Failed calls (rate limits, 4xx/5xx, timeouts) are sent too, as error traces - your code still gets the original error
 
-If the llm-lens server is unreachable the error is swallowed silently, or forwarded to your `onError` handler. Instrumentation never throws and never slows down your application.
+If the llm-lens server is unreachable the error is swallowed silently, or forwarded to your `onError` handler. Delivery times out after 3 s and at most 100 traces are in flight at once, so a slow llm-lens never piles up memory. Instrumentation never throws and never slows down your application.
 
 ### OpenAI
 
@@ -158,6 +159,30 @@ const response = await client.chat.completions.create({
   model: "gpt-4o",
   messages: [{ role: "user", content: "Hello" }],
 });
+```
+
+### Groq and other OpenAI-compatible APIs
+
+Groq uses the OpenAI SDK with a different `baseURL`. Set `provider: "groq"` so traces are recorded (and priced) as Groq:
+
+```ts
+const groq = instrumentOpenAI(
+  new OpenAI({ apiKey: process.env.GROQ_API_KEY, baseURL: "https://api.groq.com/openai/v1" }),
+  { apiUrl: "http://localhost:3001", apiKey: "llmlens_sk_...", provider: "groq" },
+);
+```
+
+### Naming calls
+
+Give traces a name (shown in the list and filterable as "Feature"), an environment, tags or a session id - statically with `metadata`, or per call with `context`, e.g. from `AsyncLocalStorage`:
+
+```ts
+import { AsyncLocalStorage } from "node:async_hooks";
+const traceContext = new AsyncLocalStorage<{ name: string; sessionId?: string }>();
+
+instrumentOpenAI(client, { apiUrl, apiKey, metadata: { env: "production" }, context: () => traceContext.getStore() });
+
+await traceContext.run({ name: "recipe.generate" }, () => client.chat.completions.create({ ... }));
 ```
 
 ### Anthropic
@@ -191,6 +216,15 @@ The API key is either a JWT token (copy it from **Settings → API keys** in the
 |---|---|---|---|
 | `apiUrl` | `string` | yes | llm-lens API base URL, e.g. `http://localhost:3001` |
 | `apiKey` | `string` | yes | JWT token or `llmlens_sk_…` API key |
+| `provider` | `"openai" \| "groq"` | no | Provider recorded for OpenAI-compatible APIs. Default `"openai"` |
+| `enabled` | `boolean` | no | `false` passes every call straight through (kill switch). Default `true` |
+| `metadata` | `{ name?, env?, tags?, sessionId?, userId? }` | no | Context sent with every trace |
+| `context` | `() => metadata \| undefined` | no | Per-call context, read when the call starts |
+| `skip` | `(params) => boolean` | no | Return `true` to not trace a call (e.g. health pings) |
+| `maskPII` | `boolean` | no | Replace e-mails, phone and card numbers before sending. Default `false` |
+| `redact` | `(text: string) => string` | no | Custom redaction applied to every string sent |
+| `timeoutMs` | `number` | no | Delivery timeout. Default `3000` |
+| `maxInFlight` | `number` | no | Traces sent at once before new ones are dropped. Default `100` |
 | `onError` | `(err: unknown) => void` | no | Called when trace submission fails. Silent by default. |
 
 ### Limitations
@@ -219,11 +253,16 @@ Base URL: `http://localhost:3001/api`
 ```http
 POST /traces/anthropic
 POST /traces/openai
+POST /traces/groq
 POST /traces/vercel-ai
 Content-Type: application/json
 ```
 
-Body is the raw request + response log for that provider (see [provider schemas](#provider-schemas)). Returns the normalized `UnifiedTrace` with HTTP 201.
+Body is the raw request + response log for that provider (see [provider schemas](#provider-schemas)). Returns the normalized `UnifiedTrace` with HTTP 201 (409 if a trace with that id already exists).
+
+For OpenAI, Groq and Anthropic a failed call can be sent with `error: { status, message, code }` instead of `response`. Every log can carry an optional `metadata: { name, env, tags, sessionId, userId }`; `env` defaults to the API key's environment.
+
+API keys (`llmlens_sk_…`) can only call the trace endpoints: the `write` scope allows ingest, `read` allows listing and reading traces and stats. Everything else needs a signed-in user.
 
 ### List traces
 
@@ -235,7 +274,10 @@ GET /traces?limit=50&offset=0&provider=anthropic
 |---|---|---|---|
 | `limit` | number | `50` | Max results (cap: 200) |
 | `offset` | number | `0` | Pagination offset |
-| `provider` | string | — | Filter: `anthropic` \| `openai` \| `vercel-ai` |
+| `provider` | string | — | Filter: `anthropic` \| `openai` \| `groq` \| `vercel-ai` |
+| `name` | string | — | Filter by trace name (`metadata.name`) |
+| `env` | string | — | Filter by environment |
+| `sessionId` | string | — | Filter by session |
 
 Response:
 
