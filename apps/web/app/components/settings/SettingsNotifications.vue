@@ -252,7 +252,7 @@ async function sendTest(ch: Channel) {
   margin-bottom: 16px; padding: 10px 14px; border: 1px solid var(--border, var(--accent-border));
   border-radius: 8px; color: var(--text-2); font-size: 12px;
 }
-.field-input.num { display: inline-flex; align-items: center; gap: 4px; width: 96px; }
+.field-input.num { display: inline-flex; align-items: center; gap: 4px; width: 96px !important; flex: 0 0 96px !important; min-width: 0 !important; }
 .field-input.num input { width: 100%; text-align: right; }
 .field-input.num span { color: var(--text-3); font-size: 12px; }
 </style>

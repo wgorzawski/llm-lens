@@ -17,6 +17,11 @@ function fmtNum(n: number) {
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
   return String(n);
 }
+function fmtTotalUsd(v: number) {
+  if (v === 0) return "$0";
+  if (v < 0.01) return "<$0.01";
+  return v < 100 ? `$${v.toFixed(2)}` : `$${v.toFixed(0)}`;
+}
 function fmtDelta(d: number) { return `${d >= 0 ? "▲" : "▼"} ${Math.abs(d).toFixed(1)}%`; }
 function provColor(id: string) {
   if (id === "vercel-ai") return "var(--provider-vercel)";
@@ -466,7 +471,7 @@ v-for="seg in donutSegments" :key="seg.id"
                   />
                 </svg>
                 <div class="donut-center">
-                  <span class="dc-val">${{ stats.providers.reduce((s,p)=>s+p.cost,0).toFixed(0) }}</span>
+                  <span class="dc-val">{{ fmtTotalUsd(stats.providers.reduce((s,p)=>s+p.cost,0)) }}</span>
                   <span class="dc-lab">total</span>
                 </div>
               </div>

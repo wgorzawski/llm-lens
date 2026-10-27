@@ -15,6 +15,16 @@ onMounted(() => {
 
 const collapsed = useState('sidebar-collapsed', () => false);
 const traceCount = useState("trace-count", () => 0);
+const { org, fetchOrg } = useOrg();
+const { apiFetch } = useApiFetch();
+// org name + role for the sidebar, and the trace count badge on pages other than the list
+onMounted(async () => {
+  if (!org.value) await fetchOrg().catch(() => null);
+  if (!traceCount.value) {
+    const page = await apiFetch<{ total: number }>("/traces?limit=1").catch(() => null);
+    if (page) traceCount.value = page.total;
+  }
+});
 
 const userName = computed<string>(() => {
   if (!token.value) return "user";
@@ -104,7 +114,7 @@ function onItemClick(to: string | null) {
           <template v-if="!collapsed">
             <div style="display:flex;flex-direction:column;line-height:1.2;flex:1;min-width:0">
               <span class="sb-user-name">{{ userName }}</span>
-              <span class="sb-user-org">{{ me?.org ?? "personal" }} · {{ me?.plan ?? "free" }}</span>
+              <span class="sb-user-org">{{ org?.name ?? me?.org ?? "personal" }}<template v-if="org?.role"> · {{ org.role }}</template></span>
             </div>
             <AppIcon name="logout" :size="12" style="color:var(--text-3)" />
           </template>
