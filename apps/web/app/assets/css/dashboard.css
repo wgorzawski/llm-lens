@@ -149,6 +149,17 @@
 .prov-openai     { background: var(--provider-openai-bg);     color: var(--provider-openai); }
 .prov-vercel-ai, .prov-vercel { background: var(--provider-vercel-bg); color: var(--provider-vercel); }
 .prov-groq       { background: var(--provider-groq-bg);       color: var(--provider-groq); }
+.prov-gemini { color: var(--provider-gemini); background: var(--provider-gemini-bg); }
+.prov-mistral { color: var(--provider-mistral); background: var(--provider-mistral-bg); }
+.prov-deepseek { color: var(--provider-deepseek); background: var(--provider-deepseek-bg); }
+.prov-xai { color: var(--provider-xai); background: var(--provider-xai-bg); }
+.prov-openrouter { color: var(--provider-openrouter); background: var(--provider-openrouter-bg); }
+.prov-together { color: var(--provider-together); background: var(--provider-together-bg); }
+.prov-fireworks { color: var(--provider-fireworks); background: var(--provider-fireworks-bg); }
+.prov-perplexity { color: var(--provider-perplexity); background: var(--provider-perplexity-bg); }
+.prov-cerebras { color: var(--provider-cerebras); background: var(--provider-cerebras-bg); }
+.prov-ollama { color: var(--provider-ollama); background: var(--provider-ollama-bg); }
+.prov-azure-openai { color: var(--provider-azure-openai); background: var(--provider-azure-openai-bg); }
 
 /* ── Status dot ──────────────────────────────────────────────────────────── */
 .sdot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }

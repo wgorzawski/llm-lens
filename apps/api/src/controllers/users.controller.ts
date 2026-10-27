@@ -1,6 +1,8 @@
-import { deleteOtherSessions } from "../db/sessions.repository";
 import { Controller, GET, PATCH, POST, DELETE } from "fastify-decorators";
 import { BCRYPT_ROUNDS } from "../constants";
+import { deleteOtherSessions } from "../db/sessions.repository";
+import { sendSlack, sendPagerDuty, sendWebhook, type Notification, type NotificationPrefs } from "../services/notify";
+import { emailEnabled, sendEmail } from "../services/email";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import bcrypt from "bcryptjs";
 import QRCode from "qrcode";
@@ -248,5 +250,41 @@ export class UsersController {
     const recoveryCodes = generateRecoveryCodes();
     await enableTotp(user.id, recoveryCodes.map(hashRecoveryCode));
     return { recoveryCodes };
+  }
+
+  /** Sends a test message to one notification channel, from the server (Slack etc. refuse browser requests) */
+  @POST("/me/notifications/test")
+  async testNotification(
+    request: FastifyRequest<{ Body: { channel?: string } }>,
+    reply: FastifyReply
+  ) {
+    const user = await findUserById(request.user.userId);
+    if (!user) return reply.status(404).send({ error: "User not found" });
+    const prefs = JSON.parse(user.preferences || "{}") as NotificationPrefs;
+    const channel = request.body?.channel;
+    const n: Notification = {
+      kind: "test",
+      title: "Test notification",
+      text: "Your LLM Lens notifications are working.",
+      severity: "info",
+    };
+    try {
+      if (channel === "slack" && prefs.slackWebhookUrl) await sendSlack(prefs.slackWebhookUrl, n);
+      else if (channel === "pagerduty" && prefs.pagerdutyKey) await sendPagerDuty(prefs.pagerdutyKey, n, user.id);
+      else if (channel === "webhook" && prefs.outboundWebhookUrl) await sendWebhook(prefs.outboundWebhookUrl, n);
+      else if (channel === "email") {
+        if (!emailEnabled()) return reply.status(400).send({ error: "E-mail is not configured on this server (SMTP_HOST)" });
+        await sendEmail(user.email, "[LLM Lens] Test notification", n.text);
+      } else return reply.status(400).send({ error: "Unknown or unconfigured channel" });
+    } catch (err) {
+      return reply.status(502).send({ error: `Delivery failed: ${(err as Error)?.message ?? err}` });
+    }
+    return { ok: true };
+  }
+
+  /** What this server can send - the settings page hides what isn't configured */
+  @GET("/me/notifications/capabilities")
+  async notificationCapabilities() {
+    return { email: emailEnabled(), alerts: process.env["DEMO_MODE"] !== "true" };
   }
 }

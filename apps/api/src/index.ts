@@ -9,7 +9,8 @@ import oauth2Plugin, { type OAuth2Namespace } from "@fastify/oauth2";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { bootstrap } from "fastify-decorators";
-import { initDb } from "./db/index";
+import { initDb, db, users, client } from "./db/index";
+import { initAlertState, checkUserAlerts, checkUserDigests, ALERT_CHECK_INTERVAL_MS } from "./services/alerts";
 import { TracesController } from "./controllers/traces.controller";
 import { AuthController } from "./controllers/auth.controller";
 import { ApiKeysController } from "./controllers/api-keys.controller";
@@ -23,7 +24,7 @@ import { hashKey, findApiKeyByHash, touchApiKey } from "./db/api-keys.repository
 import { enforceRetention } from "./services/retention";
 import { runDemoMaintenance } from "./services/demo-maintenance";
 import { isBlockedForDemoAccount } from "./services/demo-guard";
-import { bodyLimitBytes } from "./services/instance";
+import { bodyLimitBytes, loadPricingOverrides } from "./services/instance";
 import { runBackupIfDue, backupsEnabled } from "./services/backup";
 import { apiKeyRouteAllowed } from "./services/api-key-scopes";
 import { checkTokenPayload } from "./services/auth-tokens";
@@ -49,7 +50,13 @@ const server = Fastify({ logger: true, bodyLimit: bodyLimitBytes });
 
 const apiUrl = process.env["API_URL"] ?? "http://localhost:3001";
 
-await server.register(cors, { origin: true, methods: ["GET", "HEAD", "POST", "PATCH", "PUT", "DELETE"] });
+// CORS_ORIGINS (comma-separated) limits which sites may call the API from a browser -
+// set it to the web app's URL in production. SDKs sending traces from servers aren't affected.
+const corsOrigins = (process.env["CORS_ORIGINS"] ?? "").split(",").map((o) => o.trim()).filter(Boolean);
+await server.register(cors, {
+  origin: corsOrigins.length ? corsOrigins : true,
+  methods: ["GET", "HEAD", "POST", "PATCH", "PUT", "DELETE"],
+});
 await server.register(rateLimit, { global: false });
 await server.register(multipart, { limits: { fileSize: 2 * 1024 * 1024 } });
 const uploadsDir = path.resolve(process.env["UPLOADS_DIR"] ?? "./uploads");
@@ -158,9 +165,28 @@ server.setErrorHandler((err: { statusCode?: number; message: string }, _request,
   return reply.status(status).send({ error: message });
 });
 
-server.get("/health", async () => ({ status: "ok" }));
+server.get("/health", async (_request, reply) => {
+  try {
+    await client.execute("SELECT 1");
+    return { status: "ok" };
+  } catch {
+    return reply.status(503).send({ status: "error", error: "database unavailable" });
+  }
+});
+
+// Finish in-flight requests before exiting on deploys / restarts (PM2, Docker send SIGTERM/SIGINT)
+for (const signal of ["SIGTERM", "SIGINT"] as const) {
+  process.once(signal, () => {
+    server.log.info({ signal }, "shutting down");
+    const force = setTimeout(() => process.exit(0), 10_000);
+    force.unref();
+    void server.close().then(() => process.exit(0));
+  });
+}
 
 await initDb();
+await initAlertState();
+loadPricingOverrides(server.log);
 
 try {
   await server.listen({ port: parseInt(process.env["PORT"] ?? "3001"), host: "::" });
@@ -180,6 +206,18 @@ void runMaintenance().catch((err) => server.log.error(err));
 setInterval(() => {
   void runMaintenance().catch((err) => server.log.error(err));
 }, demoMode ? DEMO_REFRESH_INTERVAL_MS : RETENTION_CHECK_INTERVAL_MS);
+
+// Threshold alerts and digests (Settings -> Notifications); off on the public demo.
+if (!demoMode) {
+  const checkAlerts = async () => {
+    const all = await db.select({ id: users.id, email: users.email, preferences: users.preferences, timezone: users.timezone }).from(users);
+    for (const user of all) {
+      await checkUserAlerts(user).catch((err) => server.log.error({ err, userId: user.id }, "alert check failed"));
+      await checkUserDigests(user).catch((err) => server.log.error({ err, userId: user.id }, "digest failed"));
+    }
+  };
+  setInterval(() => void checkAlerts().catch((err) => server.log.error({ err }, "alert loop failed")), ALERT_CHECK_INTERVAL_MS);
+}
 
 // Daily database snapshot (only when BACKUP_DIR is set) - checked hourly, made once a day.
 if (backupsEnabled) {

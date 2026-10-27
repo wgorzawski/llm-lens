@@ -97,29 +97,4 @@ async function saveOrg() {
     </div>
   </section>
 
-  <section class="set-section">
-    <div class="set-section-head">
-      <div>
-        <div class="set-section-title">SSO & authentication</div>
-        <div class="set-section-sub">Available on the team plan.</div>
-      </div>
-      <span class="cs-badge">coming soon</span>
-    </div>
-    <div class="set-section-body">
-      <div class="set-row">
-        <div class="set-row-label">
-          <div class="set-row-label-text">Google Workspace SSO</div>
-          <div class="set-row-hint">Restrict sign-in to email addresses from your organization's domain.</div>
-        </div>
-        <div class="set-row-control"><button class="s-btn" disabled>Enable</button></div>
-      </div>
-      <div class="set-row">
-        <div class="set-row-label">
-          <div class="set-row-label-text">SAML / OIDC</div>
-          <div class="set-row-hint">Bring your own identity provider.</div>
-        </div>
-        <div class="set-row-control"><button class="s-btn" disabled>Configure</button></div>
-      </div>
-    </div>
-  </section>
 </template>

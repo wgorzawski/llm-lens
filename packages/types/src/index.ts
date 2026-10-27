@@ -1,4 +1,4 @@
-export { OPENAI_COMPATIBLE_PROVIDERS } from "./trace.js";
+export { OPENAI_COMPATIBLE_PROVIDERS, PROVIDERS, isTraceProvider, providerLabel } from "./trace.js";
 export type {
   OpenAICompatibleProvider,
   TraceContext,

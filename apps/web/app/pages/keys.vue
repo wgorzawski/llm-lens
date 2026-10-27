@@ -254,10 +254,6 @@ onMounted(() => {
             <div class="stat-label">Active keys</div>
             <div class="stat-val">{{ activeCount }} <span class="stat-unit">/ {{ apiKeys.length }}</span></div>
           </div>
-          <div class="stat-box">
-            <div class="stat-label">Free tier limit</div>
-            <div class="stat-val">10 <span class="stat-unit">keys</span></div>
-          </div>
           <button class="btn primary" @click="openCreate">
             <AppIcon name="plus" :size="12" /> Create new key <kbd class="kbd">N</kbd>
           </button>

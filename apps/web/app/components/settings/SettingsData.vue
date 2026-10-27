@@ -14,10 +14,6 @@ const maskPII = computed({
   get: () => (me.value?.preferences?.maskPII as boolean | undefined) ?? false,
   set: (val: boolean) => savePreference({ maskPII: val }, val ? "PII masking turned on" : "PII masking turned off"),
 });
-const shareData = computed({
-  get: () => (me.value?.preferences?.shareData as boolean | undefined) ?? false,
-  set: (val: boolean) => savePreference({ shareData: val }, val ? "Usage data sharing turned on" : "Usage data sharing turned off"),
-});
 
 const { blockedInDemo } = useDemoGuard();
 
@@ -103,15 +99,6 @@ async function downloadUsageExport() {
         </div>
         <div class="set-row-control">
           <button class="toggle" :class="{ on: maskPII }" role="switch" @click="maskPII = !maskPII as boolean"><span class="thumb" /></button>
-        </div>
-      </div>
-      <div class="set-row">
-        <div class="set-row-label">
-          <div class="set-row-label-text">Share anonymized data with Anthropic & OpenAI</div>
-          <div class="set-row-hint">Helps improve provider models. We never share keys or message bodies.</div>
-        </div>
-        <div class="set-row-control">
-          <button class="toggle" :class="{ on: shareData }" role="switch" @click="shareData = !shareData as boolean"><span class="thumb" /></button>
         </div>
       </div>
     </div>

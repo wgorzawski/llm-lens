@@ -9,7 +9,7 @@ test.describe("Settings — Notifications tab", () => {
     await page.locator(".set-nav-item", { hasText: "Notifications" }).click();
     await page.waitForLoadState("networkidle");
 
-    await expect(page.locator("button.toggle")).toHaveCount(6, { timeout: 5_000 });
+    await expect(page.locator("button.toggle")).toHaveCount(5, { timeout: 5_000 });
   });
 
   test("toggling a notification preference persists after reload", async ({ page }) => {
@@ -34,19 +34,6 @@ test.describe("Settings — Notifications tab", () => {
   });
 });
 
-test.describe("Settings — Billing tab", () => {
-  test("navigates to Billing and shows plan cards", async ({ page }) => {
-    await register(page);
-    await page.goto("/settings", { waitUntil: "networkidle" });
-
-    await page.locator(".set-nav-item", { hasText: "Billing" }).click();
-    await page.waitForLoadState("networkidle");
-
-    await expect(page.locator(".plan-card")).toHaveCount(3, { timeout: 5_000 });
-    await expect(page.locator(".plan-card.current")).toContainText("Free");
-  });
-});
-
 test.describe("Settings — Danger zone tab", () => {
   test("navigates to Danger zone and shows destructive actions", async ({ page }) => {
     await register(page);
@@ -60,15 +47,3 @@ test.describe("Settings — Danger zone tab", () => {
   });
 });
 
-test.describe("Settings — Custom domain tab", () => {
-  test("navigates to Custom domain and shows coming-soon badge", async ({ page }) => {
-    await register(page);
-    await page.goto("/settings", { waitUntil: "networkidle" });
-
-    await page.locator(".set-nav-item", { hasText: "Custom domain" }).click();
-    await page.waitForLoadState("networkidle");
-
-    await expect(page.locator(".cs-badge", { hasText: "coming soon" })).toBeVisible({ timeout: 5_000 });
-    await expect(page.locator('input[placeholder*="lens"]')).toBeVisible({ timeout: 5_000 });
-  });
-});

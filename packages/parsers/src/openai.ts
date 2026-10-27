@@ -11,7 +11,7 @@ import type {
   OpenAICompatibleProvider,
 } from "@llm-lens/types";
 import type { ParseResult } from "./types.js";
-import { computeCost } from "./pricing.js";
+import { computeCostDetailed } from "./pricing.js";
 
 export interface ParseOpenAIOptions {
   /** Provider to record - "groq" and other OpenAI-compatible APIs share this parser */
@@ -90,7 +90,16 @@ export function parseOpenAILog(raw: OpenAIRawLog, options: ParseOpenAIOptions = 
         model,
         provider,
         durationMs,
-        costUsd: computeCost(model, usage.prompt_tokens, usage.completion_tokens, provider),
+        costUsd: computeCostDetailed(
+          model,
+          {
+            // prompt_tokens includes the cached ones, which are billed at the cache rate
+            inputTokens: usage.prompt_tokens - (usage.prompt_tokens_details?.cached_tokens ?? 0),
+            cacheReadTokens: usage.prompt_tokens_details?.cached_tokens ?? 0,
+            outputTokens: usage.completion_tokens,
+          },
+          provider
+        ),
         stopReason: normalizeFinishReason(choice.finish_reason),
         temperature: request.temperature,
         maxTokens: request.max_tokens ?? request.max_completion_tokens,

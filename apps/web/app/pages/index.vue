@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { PROVIDERS } from "@llm-lens/types";
 import type { UnifiedTrace, TraceProvider } from "@llm-lens/types";
 
 const SEARCH_DEBOUNCE_MS = 300;
@@ -199,11 +200,8 @@ function compareDiff() {
 }
 
 const providerOptions = [
-  { id: "all",       label: "All providers" },
-  { id: "anthropic", label: "Anthropic",  swatch: "anthropic" },
-  { id: "openai",    label: "OpenAI",     swatch: "openai" },
-  { id: "vercel-ai", label: "Vercel AI",  swatch: "vercel-ai" },
-  { id: "groq",      label: "Groq",       swatch: "groq" },
+  { id: "all", label: "All providers" },
+  ...(Object.keys(PROVIDERS) as TraceProvider[]).map((id) => ({ id, label: PROVIDERS[id].label, swatch: id })),
 ];
 const modelOptions = computed(() => [
   { id: "all", label: "All models" },

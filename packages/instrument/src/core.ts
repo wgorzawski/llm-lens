@@ -14,13 +14,32 @@ export interface TraceContext {
   userId?: string;
 }
 
+/** Providers LLM Lens ingests in the OpenAI Chat Completions format */
+export type OpenAICompatibleProviderId =
+  | "openai"
+  | "groq"
+  | "gemini"
+  | "mistral"
+  | "deepseek"
+  | "xai"
+  | "openrouter"
+  | "together"
+  | "fireworks"
+  | "perplexity"
+  | "cerebras"
+  | "ollama"
+  | "azure-openai";
+
 export interface LLMLensConfig {
   /** llm-lens API base URL, e.g. http://localhost:3001 */
   apiUrl: string;
   /** API key (llmlens_sk_...) or JWT used as Bearer token */
   apiKey: string;
-  /** Provider to record, for OpenAI-compatible APIs such as Groq. Default: "openai" */
-  provider?: "openai" | "groq";
+  /**
+   * Provider to record for OpenAI-compatible APIs (the OpenAI SDK pointed at another
+   * baseURL). Default: "openai"
+   */
+  provider?: OpenAICompatibleProviderId;
   /** Set to false to pass every call straight through (kill switch). Default: true */
   enabled?: boolean;
   /** Context sent with every trace */

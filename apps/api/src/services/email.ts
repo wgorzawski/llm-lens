@@ -30,3 +30,16 @@ export async function sendSigninAlert(to: string, ip: string, userAgent: string)
     ].join("\n\n"),
   });
 }
+
+/** Whether outgoing e-mail is configured (SMTP_HOST) */
+export function emailEnabled(): boolean {
+  return Boolean(process.env["SMTP_HOST"]);
+}
+
+/** Sends a plain-text e-mail; a no-op when SMTP isn't configured */
+export async function sendEmail(to: string, subject: string, text: string): Promise<boolean> {
+  const transport = getTransport();
+  if (!transport) return false;
+  await transport.sendMail({ from: FROM, to, subject, text });
+  return true;
+}

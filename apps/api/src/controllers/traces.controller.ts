@@ -1,7 +1,8 @@
 import { Controller, GET, POST, PATCH, DELETE } from "fastify-decorators";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { parseAnthropicLog, parseOpenAILog, parseVercelAILog, maskPIIDeep, type ParseResult } from "@llm-lens/parsers";
-import type { AnthropicRawLog, OpenAIRawLog, VercelAIRawLog, TraceProvider, UnifiedTrace } from "@llm-lens/types";
+import { OPENAI_COMPATIBLE_PROVIDERS } from "@llm-lens/types";
+import type { AnthropicRawLog, OpenAIRawLog, VercelAIRawLog, TraceProvider, UnifiedTrace, OpenAICompatibleProvider } from "@llm-lens/types";
 import {
   insertTrace,
   listTraces,
@@ -156,13 +157,21 @@ export class TracesController {
     return ingest(request, reply, parseOpenAILog(request.body));
   }
 
-  /** Groq speaks the OpenAI Chat Completions format - same parser, recorded as provider "groq" */
-  @POST("/groq")
-  async ingestGroqLog(
-    request: FastifyRequest<{ Body: OpenAIRawLog }>,
+  /**
+   * Every other OpenAI-compatible provider (Groq, Gemini, Mistral, DeepSeek, xAI, OpenRouter,
+   * Together, Fireworks, Perplexity, Cerebras, Ollama, Azure OpenAI) - same parser, recorded
+   * under its own provider id.
+   */
+  @POST("/:provider")
+  async ingestOpenAICompatibleLog(
+    request: FastifyRequest<{ Params: { provider: string }; Body: OpenAIRawLog }>,
     reply: FastifyReply
   ) {
-    return ingest(request, reply, parseOpenAILog(request.body, { provider: "groq" }));
+    const provider = request.params.provider as OpenAICompatibleProvider;
+    if (!OPENAI_COMPATIBLE_PROVIDERS.includes(provider)) {
+      return reply.status(404).send({ error: `Unknown provider "${request.params.provider}"` });
+    }
+    return ingest(request, reply, parseOpenAILog(request.body, { provider }));
   }
 
   @POST("/vercel-ai")

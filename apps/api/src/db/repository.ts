@@ -1,5 +1,6 @@
 import { eq, gte, lte, desc, count, and, inArray, sql } from "drizzle-orm";
 import { db, traces, traceNotes, client } from "./index";
+import { providerLabel } from "@llm-lens/types";
 import type { UnifiedTrace, TraceProvider } from "@llm-lens/types";
 import { extractMessageSnippet } from "@llm-lens/parsers";
 import { LATENCY_WARN_MS, LATENCY_SLOW_MS, FTS_MATCH_LIMIT, EXPORT_PAGE_SIZE } from "../constants";
@@ -355,7 +356,8 @@ export interface DashboardV2 {
     p95: number[];
     p99: number[];
     errs: number[];
-    split: Array<{ anthropic: number; openai: number; "vercel-ai": number; groq: number }>;
+    /** Requests per provider in each bucket */
+    split: Array<Record<string, number>>;
   };
   kpis: {
     spend: number; spendDelta: number; spendSpark: number[];
@@ -423,10 +425,10 @@ export async function getDashboardV2(userId: string, range = "24h"): Promise<Das
     return d.toISOString().slice(11, 13) + ":00";
   };
 
-  type Bucket = { label: string; cost: number; reqs: number; errs: number; durs: number[]; inp: number; cache: number; split: { anthropic: number; openai: number; "vercel-ai": number; groq: number } };
+  type Bucket = { label: string; cost: number; reqs: number; errs: number; durs: number[]; inp: number; cache: number; split: Record<string, number> };
   const buckets: Bucket[] = Array.from({ length: cfg.buckets }, (_, i) => ({
     label: mkLabel(i), cost: 0, reqs: 0, errs: 0, durs: [], inp: 0, cache: 0,
-    split: { anthropic: 0, openai: 0, "vercel-ai": 0, groq: 0 },
+    split: {},
   }));
 
   for (const r of curr) {
@@ -436,8 +438,7 @@ export async function getDashboardV2(userId: string, range = "24h"): Promise<Das
     b.reqs++; b.cost += r.cost; b.inp += r.inp; b.cache += r.cache;
     if (r.status === "err") b.errs++;
     if (r.dur > 0) b.durs.push(r.dur);
-    const k = r.provider as "anthropic" | "openai" | "vercel-ai" | "groq";
-    if (k in b.split) b.split[k]++;
+    b.split[r.provider] = (b.split[r.provider] ?? 0) + 1;
   }
 
   // ── aggregate ───────────────────────────────────────────────────────────────
@@ -465,9 +466,9 @@ export async function getDashboardV2(userId: string, range = "24h"): Promise<Das
     if (r.dur > 0) v.durs.push(r.dur);
     provMap.set(r.provider, v);
   }
-  const provLabels: Record<string, string> = { anthropic: "Anthropic", openai: "OpenAI", "vercel-ai": "Vercel AI", groq: "Groq" };
+
   const providers = [...provMap.entries()].map(([id, v]) => ({
-    id, label: provLabels[id] ?? id,
+    id, label: providerLabel(id),
     requests: v.req, cost: v.cost,
     avgLat: pct(v.durs, 50),
     errRate: v.req > 0 ? (v.errs / v.req) * 100 : 0,

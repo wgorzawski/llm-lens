@@ -4,7 +4,8 @@
 
 const INGEST_ROUTES = new Set([
   "POST /api/traces/openai",
-  "POST /api/traces/groq",
+  // every other OpenAI-compatible provider
+  "POST /api/traces/:provider",
   "POST /api/traces/anthropic",
   "POST /api/traces/vercel-ai",
 ]);

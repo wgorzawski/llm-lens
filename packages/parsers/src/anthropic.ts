@@ -9,7 +9,7 @@ import type {
   ToolResult,
 } from "@llm-lens/types";
 import type { ParseResult } from "./types.js";
-import { computeCost } from "./pricing.js";
+import { computeCostDetailed } from "./pricing.js";
 import { contextMetadata } from "./openai.js";
 
 export function parseAnthropicLog(raw: AnthropicRawLog): ParseResult {
@@ -71,7 +71,16 @@ export function parseAnthropicLog(raw: AnthropicRawLog): ParseResult {
         model: response.model,
         provider: "anthropic",
         durationMs,
-        costUsd: computeCost(response.model, response.usage.input_tokens, response.usage.output_tokens),
+        costUsd: computeCostDetailed(
+          response.model,
+          {
+            inputTokens: response.usage.input_tokens,
+            outputTokens: response.usage.output_tokens,
+            cacheReadTokens: response.usage.cache_read_input_tokens ?? 0,
+            cacheWriteTokens: response.usage.cache_creation_input_tokens ?? 0,
+          },
+          "anthropic"
+        ),
         stopReason,
         temperature: request.temperature,
         maxTokens: request.max_tokens,

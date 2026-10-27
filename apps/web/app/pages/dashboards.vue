@@ -19,11 +19,19 @@ function fmtNum(n: number) {
 }
 function fmtDelta(d: number) { return `${d >= 0 ? "▲" : "▼"} ${Math.abs(d).toFixed(1)}%`; }
 function provColor(id: string) {
-  if (id === "anthropic") return "var(--provider-anthropic)";
-  if (id === "openai") return "var(--provider-openai)";
-  if (id === "groq") return "var(--provider-groq)";
-  return "var(--provider-vercel)";
+  if (id === "vercel-ai") return "var(--provider-vercel)";
+  return `var(--provider-${id}, var(--text-3))`;
 }
+
+/** Providers that appear in the current range, busiest first - stacking order and legend */
+const splitProviders = computed(() => {
+  const totals = new Map<string, number>();
+  for (const bucket of stats.value?.series.split ?? []) {
+    for (const [id, n] of Object.entries(bucket)) totals.set(id, (totals.get(id) ?? 0) + n);
+  }
+  return [...totals.entries()].filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]).map(([id]) => id);
+});
+const sumSplit = (s: Record<string, number>) => Object.values(s).reduce((a, b) => a + b, 0);
 
 // ── subbar range dropdown ─────────────────────────────────────────────────────
 const rangeOpen = ref(false);
@@ -67,7 +75,7 @@ const heroYTicks = computed(() => {
     return [`$${mx.toFixed(2)}`, `$${(mx / 2).toFixed(2)}`, "$0"];
   }
   if (metric.value === "reqs") {
-    const totals = S.split.map((s) => s.anthropic + s.openai + s["vercel-ai"] + (s.groq ?? 0));
+    const totals = S.split.map(sumSplit);
     const mx = Math.max(...totals, 1);
     return [String(mx), String(Math.round(mx / 2)), "0"];
   }
@@ -100,9 +108,9 @@ function stackedBarsPath() {
   const n = S.split.length;
   const slot = W / n;
   const bw = slot * 0.62;
-  const totals = S.split.map((s) => s.anthropic + s.openai + s["vercel-ai"] + (s.groq ?? 0));
+  const totals = S.split.map(sumSplit);
   const max = Math.max(...totals, 1);
-  const ORDER: Array<"anthropic" | "openai" | "vercel-ai" | "groq"> = ["anthropic", "openai", "vercel-ai", "groq"];
+  const ORDER = splitProviders.value;
   const result: Array<{ x: number; y: number; h: number; w: number; provider: string }> = [];
   S.split.forEach((s, i) => {
     let acc = 0;
@@ -377,10 +385,7 @@ v-for="m in ['cost','reqs','latency','errors']" :key="m"
               <span class="leg"><span class="leg-sw" style="background:var(--danger)" />p99</span>
             </div>
             <div v-if="metric === 'reqs'" class="dchart-legend">
-              <span class="leg"><span class="leg-sw" style="background:var(--provider-anthropic)" />anthropic</span>
-              <span class="leg"><span class="leg-sw" style="background:var(--provider-openai)" />openai</span>
-              <span class="leg"><span class="leg-sw" style="background:var(--provider-vercel)" />vercel-ai</span>
-              <span class="leg"><span class="leg-sw" style="background:var(--provider-groq)" />groq</span>
+              <span v-for="id in splitProviders" :key="id" class="leg"><span class="leg-sw" :style="{ background: provColor(id) }" />{{ id }}</span>
             </div>
 
             <!-- Plot area -->

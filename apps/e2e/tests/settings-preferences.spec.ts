@@ -45,28 +45,6 @@ test.describe("Settings — PII masking toggle", () => {
   });
 });
 
-test.describe("Settings — Share anonymized data toggle", () => {
-  test("toggles on and persists after reload", async ({ page }) => {
-    await register(page);
-    await page.goto("/settings", { waitUntil: "networkidle" });
-    await page.locator(".set-nav-item", { hasText: "Data retention" }).click();
-    await page.waitForLoadState("networkidle");
-
-    const toggle = page.locator("button.toggle[role='switch']").nth(1);
-    await expect(toggle).not.toHaveClass(/on/, { timeout: 5_000 }); // default false
-
-    await toggle.click();
-    await page.waitForTimeout(500);
-    await expect(toggle).toHaveClass(/on/);
-
-    await page.reload({ waitUntil: "networkidle" });
-    await page.locator(".set-nav-item", { hasText: "Data retention" }).click();
-    await page.waitForLoadState("networkidle");
-
-    await expect(page.locator("button.toggle[role='switch']").nth(1)).toHaveClass(/on/, { timeout: 5_000 });
-  });
-});
-
 // ── Appearance preferences ─────────────────────────────────────────────────────
 
 test.describe("Settings — Appearance: Auto theme", () => {

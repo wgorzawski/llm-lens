@@ -15,6 +15,17 @@
 .prov-vercel    { color: var(--provider-vercel);    background: var(--provider-vercel-bg); }
 .prov-vercel-ai { color: var(--provider-vercel);    background: var(--provider-vercel-bg); }
 .prov-groq      { color: var(--provider-groq);      background: var(--provider-groq-bg); }
+.prov-gemini { color: var(--provider-gemini); background: var(--provider-gemini-bg); }
+.prov-mistral { color: var(--provider-mistral); background: var(--provider-mistral-bg); }
+.prov-deepseek { color: var(--provider-deepseek); background: var(--provider-deepseek-bg); }
+.prov-xai { color: var(--provider-xai); background: var(--provider-xai-bg); }
+.prov-openrouter { color: var(--provider-openrouter); background: var(--provider-openrouter-bg); }
+.prov-together { color: var(--provider-together); background: var(--provider-together-bg); }
+.prov-fireworks { color: var(--provider-fireworks); background: var(--provider-fireworks-bg); }
+.prov-perplexity { color: var(--provider-perplexity); background: var(--provider-perplexity-bg); }
+.prov-cerebras { color: var(--provider-cerebras); background: var(--provider-cerebras-bg); }
+.prov-ollama { color: var(--provider-ollama); background: var(--provider-ollama-bg); }
+.prov-azure-openai { color: var(--provider-azure-openai); background: var(--provider-azure-openai-bg); }
 .model { font-family: var(--font-mono); font-size: 12px; color: var(--text-0); white-space: nowrap; }
 
 /* ── Markers / tags ── */

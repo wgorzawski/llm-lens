@@ -1,8 +1,42 @@
-export type TraceProvider = "openai" | "anthropic" | "vercel-ai" | "groq";
+/**
+ * Every provider LLM Lens knows. OpenAI-compatible ones share the OpenAI parser and are
+ * ingested at POST /api/traces/<id>; `baseUrl` + `keyEnv` let the server replay their traces.
+ */
+export const PROVIDERS = {
+  openai:         { label: "OpenAI",       openaiCompatible: true,  baseUrl: "https://api.openai.com/v1", keyEnv: "OPENAI_API_KEY" },
+  anthropic:      { label: "Anthropic",    openaiCompatible: false, baseUrl: "https://api.anthropic.com/v1", keyEnv: "ANTHROPIC_API_KEY" },
+  "vercel-ai":    { label: "Vercel AI",    openaiCompatible: false, baseUrl: undefined, keyEnv: undefined },
+  groq:           { label: "Groq",         openaiCompatible: true,  baseUrl: "https://api.groq.com/openai/v1", keyEnv: "GROQ_API_KEY" },
+  gemini:         { label: "Gemini",       openaiCompatible: true,  baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai", keyEnv: "GEMINI_API_KEY" },
+  mistral:        { label: "Mistral",      openaiCompatible: true,  baseUrl: "https://api.mistral.ai/v1", keyEnv: "MISTRAL_API_KEY" },
+  deepseek:       { label: "DeepSeek",     openaiCompatible: true,  baseUrl: "https://api.deepseek.com/v1", keyEnv: "DEEPSEEK_API_KEY" },
+  xai:            { label: "xAI",          openaiCompatible: true,  baseUrl: "https://api.x.ai/v1", keyEnv: "XAI_API_KEY" },
+  openrouter:     { label: "OpenRouter",   openaiCompatible: true,  baseUrl: "https://openrouter.ai/api/v1", keyEnv: "OPENROUTER_API_KEY" },
+  together:       { label: "Together AI",  openaiCompatible: true,  baseUrl: "https://api.together.xyz/v1", keyEnv: "TOGETHER_API_KEY" },
+  fireworks:      { label: "Fireworks",    openaiCompatible: true,  baseUrl: "https://api.fireworks.ai/inference/v1", keyEnv: "FIREWORKS_API_KEY" },
+  perplexity:     { label: "Perplexity",   openaiCompatible: true,  baseUrl: "https://api.perplexity.ai", keyEnv: "PERPLEXITY_API_KEY" },
+  cerebras:       { label: "Cerebras",     openaiCompatible: true,  baseUrl: "https://api.cerebras.ai/v1", keyEnv: "CEREBRAS_API_KEY" },
+  ollama:         { label: "Ollama",       openaiCompatible: true,  baseUrl: "http://localhost:11434/v1", keyEnv: undefined },
+  "azure-openai": { label: "Azure OpenAI", openaiCompatible: true,  baseUrl: undefined, keyEnv: "AZURE_OPENAI_API_KEY" },
+} as const;
+
+export type TraceProvider = keyof typeof PROVIDERS;
 
 /** Providers that speak the OpenAI Chat Completions format and share its parser */
-export const OPENAI_COMPATIBLE_PROVIDERS = ["openai", "groq"] as const;
-export type OpenAICompatibleProvider = (typeof OPENAI_COMPATIBLE_PROVIDERS)[number];
+export const OPENAI_COMPATIBLE_PROVIDERS = (Object.keys(PROVIDERS) as TraceProvider[]).filter(
+  (id) => PROVIDERS[id].openaiCompatible
+) as OpenAICompatibleProvider[];
+export type OpenAICompatibleProvider = {
+  [K in TraceProvider]: (typeof PROVIDERS)[K]["openaiCompatible"] extends true ? K : never;
+}[TraceProvider];
+
+export function isTraceProvider(id: string): id is TraceProvider {
+  return Object.prototype.hasOwnProperty.call(PROVIDERS, id);
+}
+
+export function providerLabel(id: string): string {
+  return isTraceProvider(id) ? PROVIDERS[id].label : id;
+}
 
 export type TraceRole = "user" | "assistant" | "system" | "tool";
 

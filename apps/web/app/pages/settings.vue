@@ -11,7 +11,7 @@ const { fetchMembers } = useOrgMembers();
 await fetchMembers();
 
 const navSection = ref("profile");
-const navGroups = [
+const navGroups: Array<{ label: string; items: Array<{ id: string; label: string; icon: string; danger?: boolean }> }> = [
   {
     label: "Personal",
     items: [
@@ -32,7 +32,6 @@ const navGroups = [
   {
     label: "Advanced",
     items: [
-      { id: "domain", label: "Custom domain", icon: "globe" },
       { id: "danger", label: "Danger zone",   icon: "warn", danger: true },
     ],
   },
@@ -75,7 +74,6 @@ const navGroups = [
       <SettingsOrg           v-else-if="navSection === 'org'" />
       <SettingsMembers       v-else-if="navSection === 'members'" />
       <SettingsData          v-else-if="navSection === 'data'" />
-      <SettingsDomain        v-else-if="navSection === 'domain'" />
       <SettingsDanger        v-else-if="navSection === 'danger'" />
     </div>
 
