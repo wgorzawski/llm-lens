@@ -1,0 +1,41 @@
+# Self-hosted LLM Lens: API on :3001, web app on :3000, data in the "llmlens-data" volume.
+#   1. cp .env.docker.example .env and set JWT_SECRET (openssl rand -hex 32) and the URLs
+#   2. docker compose up -d
+#   3. open http://localhost:3000 and create the first account (it becomes the owner;
+#      with REGISTRATION_ENABLED=false nobody else can sign up without an invite)
+services:
+  api:
+    build: .
+    image: llm-lens:latest
+    command: api
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PORT: "3001"
+    ports:
+      - "${API_PORT:-3001}:3001"
+    volumes:
+      - llmlens-data:/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3001/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  web:
+    image: llm-lens:latest
+    command: web
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      NUXT_PUBLIC_API_BASE: ${PUBLIC_API_URL:-http://localhost:3001}/api
+      # server-side rendering talks to the API container directly
+      NUXT_API_BASE_SERVER: http://api:3001/api
+      NUXT_PUBLIC_REGISTRATION_ENABLED: ${REGISTRATION_ENABLED:-true}
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+
+volumes:
+  llmlens-data:

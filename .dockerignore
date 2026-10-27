@@ -1,0 +1,17 @@
+**/node_modules
+**/dist
+**/.nuxt
+**/.output
+**/*.db
+**/*.db-*
+**/.env
+**/.env.*
+!**/.env.example
+**/uploads
+.git
+.idea
+.notes
+.claude
+docs
+apps/e2e
+apps/playground

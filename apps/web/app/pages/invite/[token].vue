@@ -16,7 +16,7 @@ const accepting = ref(false);
 const acceptError = ref<string | null>(null);
 
 try {
-  preview.value = await $fetch<InvitePreview>(`${apiBase}/orgs/invites/${inviteToken}`);
+  preview.value = await $fetch<InvitePreview>(`${apiBaseFor(config)}/orgs/invites/${inviteToken}`);
 } catch (err) {
   const e = err as { data?: { error?: string }; message?: string };
   loadError.value = e.data?.error ?? e.message ?? "Invite not found";

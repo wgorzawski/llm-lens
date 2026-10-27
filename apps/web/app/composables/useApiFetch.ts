@@ -1,6 +1,6 @@
 export function useApiFetch() {
   const config = useRuntimeConfig();
-  const apiBase = config.public.apiBase as string;
+  const apiBase = apiBaseFor(config);
   const { token } = useAuth();
   // Created up front: composables can't be called after an await during SSR.
   const sessionExpired = useCookie<string | null>("session_expired", { maxAge: 60 });
@@ -38,4 +38,10 @@ export function useApiFetch() {
   }
 
   return { apiFetch };
+}
+
+/** API base URL: the server-side one during SSR when configured, the public one otherwise */
+export function apiBaseFor(config: ReturnType<typeof useRuntimeConfig>): string {
+  if (import.meta.server && config.apiBaseServer) return config.apiBaseServer as string;
+  return config.public.apiBase as string;
 }

@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/wgorzawski/llm-lens/actions/workflows/ci.yml/badge.svg)](https://github.com/wgorzawski/llm-lens/actions/workflows/ci.yml)
 
-A tool for ingesting, storing, and visualizing LLM API traces. Supports Anthropic, OpenAI, and Vercel AI SDK logs and normalizes them into a unified format for side-by-side inspection.
+Self-hosted observability for LLM calls: every prompt, response, error, token and dollar your app spends, in one place. Supports 15 providers (OpenAI, Anthropic, Groq, Gemini, Mistral, DeepSeek, xAI, OpenRouter, Ollama and more) and normalizes them into a unified format for inspection, search, diffing and alerting.
 
 **[→ llm-lens landing page](https://wgorzawski.github.io/llm-lens/)** · **[→ Live demo](https://llmlens.tojest.dev/)**
 
@@ -22,7 +22,13 @@ A tool for ingesting, storing, and visualizing LLM API traces. Supports Anthropi
 
 ## Features
 
-- **Unified trace format** — Anthropic, OpenAI, and Vercel AI logs normalized to a single `UnifiedTrace` schema
+- **15 providers, one format** — OpenAI, Anthropic, Vercel AI SDK and every OpenAI-compatible API (Groq, Gemini, Mistral, DeepSeek, xAI, OpenRouter, Together, Fireworks, Perplexity, Cerebras, Ollama, Azure OpenAI) normalized to a single `UnifiedTrace` schema
+- **Errors, not just successes** — rate limits, 4xx/5xx and timeouts are recorded with status, provider error code and the failing request
+- **Names, tags, environments, sessions** — label calls by feature (`recipe.generate`), split production from staging, open a whole chat conversation at once; filter by any of them
+- **Cost tracking** — current prices for all major models including cached-token rates; custom prices for anything else (`PRICING_FILE`)
+- **Alerts & digests** — error-rate, p95 latency and daily cost alerts to e-mail, Slack, PagerDuty or a webhook; daily and weekly e-mail summaries
+- **PII masking** — e-mails, phone and card numbers masked in the SDK before sending, or on the server before storing
+- **Self-hosting** — Docker image + compose file, SQLite with nightly backups, invite-only sign-ups, keep-forever retention
 - **Chat-style visualization** — role-aware message bubbles (user / assistant / tool)
 - **Tool call inspection** — collapsible blocks showing tool name, JSON input, and results
 - **System prompt viewer** — collapsible, shown once at the top of the thread
@@ -38,10 +44,10 @@ A tool for ingesting, storing, and visualizing LLM API traces. Supports Anthropi
 | Layer | Technology |
 |---|---|
 | Frontend | Nuxt 4, Vue 3, UnoCSS |
-| Backend | Fastify 4, fastify-decorators |
+| Backend | Fastify 5, fastify-decorators |
 | Database | SQLite via Drizzle ORM + `@libsql/client` |
 | Parsers | Pure TypeScript, zero runtime deps |
-| Tests | Vitest (60 tests) |
+| Tests | Vitest (parsers, pricing, PII, instrument) + Playwright e2e |
 | Monorepo | pnpm workspaces |
 
 ## Project structure
@@ -65,7 +71,38 @@ llm-lens/
     └── instrument/             # @llm-lens/instrument — auto-instrumentation wrappers (OpenAI, Anthropic)
 ```
 
-## Getting started
+## Self-hosting
+
+### Docker (recommended)
+
+```bash
+git clone https://github.com/wgorzawski/llm-lens.git && cd llm-lens
+cp .env.docker.example .env     # set JWT_SECRET (openssl rand -hex 32) and your URLs
+docker compose up -d
+```
+
+Open [http://localhost:3000](http://localhost:3000) and create the first account - it becomes the owner. With `REGISTRATION_ENABLED=false` nobody else can sign up unless invited (Settings → Members). Data (SQLite database, uploads, daily backups) lives in the `llmlens-data` volume.
+
+Behind a reverse proxy (Caddy, nginx, Traefik, Cloudflare), serve the web app and the API on two hostnames and set `PUBLIC_API_URL`, `API_URL`, `FRONTEND_URL` and `CORS_ORIGINS` in `.env` accordingly.
+
+### Production checklist
+
+| Setting | Why |
+|---|---|
+| `JWT_SECRET` | random, at least 32 characters; changing it signs everyone out |
+| `REGISTRATION_ENABLED=false` (API) + `NUXT_PUBLIC_REGISTRATION_ENABLED=false` (web) | invite-only after the owner account |
+| `DEFAULT_RETENTION_DAYS=0` | keep traces forever (each org can change it in Settings → Data retention) |
+| `BACKUP_DIR`, `BACKUP_KEEP_DAYS` | daily consistent SQLite snapshot (`VACUUM INTO`) and how many to keep; copy them off the server too |
+| `CORS_ORIGINS` | the web app's URL |
+| `SMTP_*` | e-mail for alerts, digests and sign-in notifications |
+| `PRICING_FILE` | prices for fine-tunes / self-hosted models |
+| one API key per app and environment, scope `write` only | a leaked key can only add traces |
+
+### Without Docker
+
+Build with `pnpm -r build` and run `node apps/api/dist/index.js` and `node apps/web/.output/server/index.mjs` under a process manager. `ecosystem.config.cjs` + `deploy.sh` show a PM2 setup running several instances (e.g. a public demo and a production instance) side by side on one small VPS.
+
+## Running from source
 
 ### Prerequisites
 
@@ -163,7 +200,24 @@ const response = await client.chat.completions.create({
 
 ### Groq and other OpenAI-compatible APIs
 
-Groq uses the OpenAI SDK with a different `baseURL`. Set `provider: "groq"` so traces are recorded (and priced) as Groq:
+Most providers speak the OpenAI Chat Completions format - use the OpenAI SDK with their `baseURL` and tell LLM Lens which provider it is, so traces are labelled and priced correctly:
+
+| `provider` | Base URL for the OpenAI SDK | Replay key (server env) |
+|---|---|---|
+| `groq` | `https://api.groq.com/openai/v1` | `GROQ_API_KEY` |
+| `gemini` | `https://generativelanguage.googleapis.com/v1beta/openai` | `GEMINI_API_KEY` |
+| `mistral` | `https://api.mistral.ai/v1` | `MISTRAL_API_KEY` |
+| `deepseek` | `https://api.deepseek.com/v1` | `DEEPSEEK_API_KEY` |
+| `xai` | `https://api.x.ai/v1` | `XAI_API_KEY` |
+| `openrouter` | `https://openrouter.ai/api/v1` | `OPENROUTER_API_KEY` |
+| `together` | `https://api.together.xyz/v1` | `TOGETHER_API_KEY` |
+| `fireworks` | `https://api.fireworks.ai/inference/v1` | `FIREWORKS_API_KEY` |
+| `perplexity` | `https://api.perplexity.ai` | `PERPLEXITY_API_KEY` |
+| `cerebras` | `https://api.cerebras.ai/v1` | `CEREBRAS_API_KEY` |
+| `ollama` | `http://localhost:11434/v1` | - (`OLLAMA_BASE_URL`) |
+| `azure-openai` | your deployment URL | `AZURE_OPENAI_API_KEY` + `AZURE_OPENAI_BASE_URL` |
+
+Without the SDK, POST the raw log to `/api/traces/<provider>`.
 
 ```ts
 const groq = instrumentOpenAI(
@@ -253,8 +307,9 @@ Base URL: `http://localhost:3001/api`
 ```http
 POST /traces/anthropic
 POST /traces/openai
-POST /traces/groq
 POST /traces/vercel-ai
+POST /traces/<provider>      # groq, gemini, mistral, deepseek, xai, openrouter, together,
+                             # fireworks, perplexity, cerebras, ollama, azure-openai
 Content-Type: application/json
 ```
 
@@ -300,6 +355,13 @@ GET /traces/:id
 
 ```http
 DELETE /traces/:id
+```
+
+### Filter values
+
+```http
+GET /traces/facets
+→ { "names": [{ "name": "recipe.generate", "count": 120 }], "envs": [...], "models": [...] }
 ```
 
 ### Health check
@@ -390,15 +452,17 @@ GET /health
 ### Run tests
 
 ```bash
-# Unit tests (parsers)
+# Unit tests: parsers, pricing and PII masking; the instrument SDK
 pnpm --filter @llm-lens/parsers test
-# 60 tests: 15 Anthropic · 20 OpenAI · 25 Vercel AI
+pnpm --filter @llm-lens/instrument test
 
 # End-to-end tests (requires running API + web dev servers)
 pnpm --filter @llm-lens/e2e test
 ```
 
-### Add a new provider parser
+### Add a new provider
+
+An OpenAI-compatible provider only needs an entry in `PROVIDERS` (`packages/types/src/trace.ts`), its prices in `packages/parsers/src/pricing.ts`, its id in the instrument's `OpenAICompatibleProviderId` and a colour in `apps/web/app/assets/css/tokens.css` + `traces.css`. For a provider with its own format:
 
 1. Add raw log types to `packages/types/src/providers/<provider>.ts` and export from `packages/types/src/index.ts`
 2. Create `packages/parsers/src/<provider>.ts` implementing `parse<Provider>Log(raw): ParseResult`
