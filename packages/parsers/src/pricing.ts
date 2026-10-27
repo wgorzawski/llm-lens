@@ -49,9 +49,35 @@ const PREFIX_PRICES: Array<[string, { in: number; out: number }]> = [
   ["o3",            { in: 10.0, out: 40.0 }],
 ];
 
-export function computeCost(model: string, inputTokens: number, outputTokens: number): number {
+// Groq (OpenAI-compatible API). Model ids overlap with OpenAI's open-weight releases
+// ("openai/gpt-oss-120b"), so Groq traces are priced from this table first.
+// Source: groq.com/pricing, checked 2026-10-27 (on-demand prices; free tier is $0).
+const GROQ_PRICES: Record<string, { in: number; out: number }> = {
+  "openai/gpt-oss-120b":                    { in: 0.15, out: 0.6 },
+  "openai/gpt-oss-20b":                     { in: 0.075, out: 0.3 },
+  "openai/gpt-oss-safeguard-20b":           { in: 0.075, out: 0.3 },
+  "llama-3.3-70b-versatile":                { in: 0.59, out: 0.79 },
+  "llama-3.1-8b-instant":                   { in: 0.05, out: 0.08 },
+  "meta-llama/llama-4-scout-17b-16e-instruct":    { in: 0.11, out: 0.34 },
+  "meta-llama/llama-4-maverick-17b-128e-instruct": { in: 0.2, out: 0.6 },
+  "moonshotai/kimi-k2-instruct":            { in: 1.0, out: 3.0 },
+  "moonshotai/kimi-k2-instruct-0905":       { in: 1.0, out: 3.0 },
+  "qwen/qwen3-32b":                         { in: 0.29, out: 0.59 },
+  "qwen/qwen3.8-27b":                       { in: 0.8, out: 4.0 },
+};
+
+const GROQ_PREFIX_PRICES: Array<[string, { in: number; out: number }]> = [
+  ["openai/gpt-oss-120b", { in: 0.15, out: 0.6 }],
+  ["openai/gpt-oss-20b",  { in: 0.075, out: 0.3 }],
+];
+
+export function computeCost(model: string, inputTokens: number, outputTokens: number, provider?: string): number {
   const m = model.toLowerCase();
-  const price = PRICES[m] ?? PREFIX_PRICES.find(([p]) => m.startsWith(p))?.[1];
+  const price =
+    (provider === "groq" ? GROQ_PRICES[m] ?? GROQ_PREFIX_PRICES.find(([p]) => m.startsWith(p))?.[1] : undefined) ??
+    PRICES[m] ??
+    GROQ_PRICES[m] ??
+    PREFIX_PRICES.find(([p]) => m.startsWith(p))?.[1];
   if (!price) return 0;
   return (inputTokens * price.in + outputTokens * price.out) / 1_000_000;
 }

@@ -1,4 +1,7 @@
+export { OPENAI_COMPATIBLE_PROVIDERS } from "./trace.js";
 export type {
+  OpenAICompatibleProvider,
+  TraceContext,
   UnifiedTrace,
   TraceMessage,
   TraceContentBlock,
@@ -22,6 +25,7 @@ export type {
 } from "./providers/anthropic.js";
 export type {
   OpenAIRawLog,
+  OpenAIRawError,
   OpenAIRequest,
   OpenAIResponse,
   OpenAIMessage,

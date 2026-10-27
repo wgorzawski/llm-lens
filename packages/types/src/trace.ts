@@ -1,4 +1,8 @@
-export type TraceProvider = "openai" | "anthropic" | "vercel-ai";
+export type TraceProvider = "openai" | "anthropic" | "vercel-ai" | "groq";
+
+/** Providers that speak the OpenAI Chat Completions format and share its parser */
+export const OPENAI_COMPATIBLE_PROVIDERS = ["openai", "groq"] as const;
+export type OpenAICompatibleProvider = (typeof OPENAI_COMPATIBLE_PROVIDERS)[number];
 
 export type TraceRole = "user" | "assistant" | "system" | "tool";
 
@@ -49,6 +53,31 @@ export interface TraceMetadata {
   statusCode?: number;
   /** Error message if the LLM call failed */
   error?: string;
+  /** Provider error code, e.g. "rate_limit_exceeded" or "tool_use_failed" */
+  errorCode?: string;
+  /** Human-readable label set by the caller, e.g. "recipe.generate" */
+  name?: string;
+  /** Environment the call came from, e.g. "production" (defaults to the API key's env) */
+  env?: string;
+  /** Free-form tags set by the caller */
+  tags?: string[];
+  /** Groups calls belonging to one conversation / session */
+  sessionId?: string;
+  /** End-user id in the calling app */
+  endUserId?: string;
+  /** Hidden reasoning trace returned by reasoning models (e.g. Groq gpt-oss) */
+  reasoning?: string;
+  /** Tokens spent on hidden reasoning (part of outputTokens) */
+  reasoningTokens?: number;
+}
+
+/** Optional context a client can send along with a raw log */
+export interface TraceContext {
+  name?: string;
+  env?: string;
+  tags?: string[];
+  sessionId?: string;
+  userId?: string;
 }
 
 export interface UnifiedTrace {

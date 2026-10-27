@@ -1,7 +1,15 @@
-/** Raw Anthropic Messages API request/response log */
+import type { TraceContext } from "../trace.js";
+
+/**
+ * Raw Anthropic Messages API request/response log. A failed call is sent with `error`
+ * and without `response` (the type keeps `response` required for the common case).
+ */
 export interface AnthropicRawLog {
   request: AnthropicRequest;
   response: AnthropicResponse;
+  error?: { status?: number; message: string; code?: string; type?: string };
+  /** Optional caller context (label, env, session...) */
+  metadata?: TraceContext;
   /** Unix timestamp ms when the request was sent */
   timestamp?: number;
   /** Round-trip duration in ms */

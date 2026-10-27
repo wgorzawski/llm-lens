@@ -1,56 +1,48 @@
 import type OpenAI from "openai";
+import { resolveContext, shouldSkip, submit, toRawError, type LLMLensConfig } from "./core.js";
 
-export interface LLMLensConfig {
-  /** llm-lens API base URL, e.g. http://localhost:3001 */
-  apiUrl: string;
-  /** JWT token or API key used as Bearer token */
-  apiKey: string;
-  /** Called when trace submission fails. Silent by default. */
-  onError?: (err: unknown) => void;
-}
+export type { LLMLensConfig } from "./core.js";
 
 /**
- * Patches client.chat.completions.create in-place to forward every
- * non-streaming call to llm-lens. Streaming calls are passed through
- * untouched — full response collection would require buffering the stream.
+ * Patches client.chat.completions.create in place so every non-streaming call is sent
+ * to llm-lens - successful ones with the response, failed ones (rate limits, 4xx/5xx,
+ * timeouts) with the error.
+ *
+ * The SDK's own promise is returned untouched, so `.withResponse()` / `.asResponse()`
+ * keep working, nothing is awaited on the app's side and llm-lens being down never
+ * affects the call. Streaming calls are passed through untouched.
  */
-export function instrumentOpenAI(client: OpenAI, config: LLMLensConfig): OpenAI {
+export function instrumentOpenAI<T extends OpenAI>(client: T, config: LLMLensConfig): T {
   const completions = client.chat.completions;
-  const original = completions.create.bind(completions);
+  const original = completions.create.bind(completions) as (params: unknown, options?: unknown) => Promise<unknown>;
+  const path = config.provider ?? "openai";
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (completions as any).create = async function (params: any, options?: any) {
-    if (params.stream) {
-      return original(params, options);
-    }
+  (completions as any).create = function (params: any, options?: any) {
+    if (shouldSkip(config, params)) return original(params, options);
 
+    const metadata = resolveContext(config);
     const timestamp = Date.now();
     const t0 = performance.now();
-    const response = await original(params, options);
-    const durationMs = Math.round(performance.now() - t0);
+    const promise = original(params, options);
 
-    void submitTrace(config, { request: params, response, timestamp, durationMs });
+    try {
+      promise.then(
+        (response) => {
+          const durationMs = Math.round(performance.now() - t0);
+          submit(config, path, { request: params, response, timestamp, durationMs, metadata });
+        },
+        (err: unknown) => {
+          const durationMs = Math.round(performance.now() - t0);
+          submit(config, path, { request: params, error: toRawError(err), timestamp, durationMs, metadata });
+        }
+      );
+    } catch (err) {
+      config.onError?.(err);
+    }
 
-    return response;
+    return promise;
   };
 
   return client;
-}
-
-async function submitTrace(config: LLMLensConfig, log: unknown): Promise<void> {
-  try {
-    const res = await fetch(`${config.apiUrl}/api/traces/openai`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${config.apiKey}`,
-      },
-      body: JSON.stringify(log),
-    });
-    if (!res.ok) {
-      config.onError?.(new Error(`llm-lens submission failed: HTTP ${res.status}`));
-    }
-  } catch (err) {
-    config.onError?.(err);
-  }
 }

@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { parseOpenAILog } from "../openai.js";
-import type { OpenAIRawLog } from "@llm-lens/types";
+import type { OpenAIRawLog, OpenAIResponse } from "@llm-lens/types";
 
-const baseLog: OpenAIRawLog = {
+const baseLog: OpenAIRawLog & { response: OpenAIResponse } = {
   request: {
     model: "gpt-4o",
     messages: [{ role: "user", content: "What is 2+2?" }],
@@ -290,5 +290,94 @@ describe("parseOpenAILog", () => {
   it("returns failure for malformed input", () => {
     const result = parseOpenAILog(null as unknown as OpenAIRawLog);
     expect(result.success).toBe(false);
+  });
+});
+
+describe("parseOpenAILog - Groq, errors and context", () => {
+  const groqLog: OpenAIRawLog = {
+    request: {
+      model: "openai/gpt-oss-120b",
+      messages: [
+        { role: "system", content: "You are a chef." },
+        { role: "user", content: "Pomysł na obiad?" },
+      ],
+    },
+    response: {
+      id: "chatcmpl-groq-1",
+      object: "chat.completion",
+      created: 1761600000,
+      model: "openai/gpt-oss-120b",
+      choices: [
+        {
+          index: 0,
+          message: { role: "assistant", content: "Zupa pomidorowa.", reasoning: "User wants dinner." },
+          finish_reason: "stop",
+        },
+      ],
+      usage: {
+        prompt_tokens: 1000000,
+        completion_tokens: 1000000,
+        total_tokens: 2000000,
+        completion_tokens_details: { reasoning_tokens: 12 },
+      },
+    },
+    timestamp: 1761600000000,
+    durationMs: 300,
+    metadata: { name: "recipe.generate", env: "production", tags: ["a", "", "b"], sessionId: "s1", userId: "u1" },
+  };
+
+  it("records the groq provider and Groq pricing", () => {
+    const result = parseOpenAILog(groqLog, { provider: "groq" });
+    if (!result.success) throw new Error(result.error);
+    expect(result.trace.metadata.provider).toBe("groq");
+    expect(result.trace.metadata.costUsd).toBeCloseTo(0.75);
+  });
+
+  it("copies caller context and reasoning onto metadata", () => {
+    const result = parseOpenAILog(groqLog, { provider: "groq" });
+    if (!result.success) throw new Error(result.error);
+    expect(result.trace.metadata).toMatchObject({
+      name: "recipe.generate",
+      env: "production",
+      tags: ["a", "b"],
+      sessionId: "s1",
+      endUserId: "u1",
+      reasoning: "User wants dinner.",
+      reasoningTokens: 12,
+      systemPrompt: "You are a chef.",
+    });
+  });
+
+  it("turns an error log into a failed trace", () => {
+    const result = parseOpenAILog(
+      {
+        request: groqLog.request,
+        error: { status: 429, message: "Rate limit reached", code: "rate_limit_exceeded" },
+        timestamp: 1761600000000,
+        durationMs: 120,
+        metadata: { name: "chat" },
+      },
+      { provider: "groq" }
+    );
+    if (!result.success) throw new Error(result.error);
+    expect(result.trace.id).toMatch(/^err_/);
+    expect(result.trace.metadata).toMatchObject({
+      statusCode: 429,
+      error: "Rate limit reached",
+      errorCode: "rate_limit_exceeded",
+      model: "openai/gpt-oss-120b",
+      name: "chat",
+    });
+    expect(result.trace.messages).toHaveLength(1);
+  });
+
+  it("records network errors without a status as 599", () => {
+    const result = parseOpenAILog({ request: groqLog.request, error: { message: "Request timed out." } });
+    if (!result.success) throw new Error(result.error);
+    expect(result.trace.metadata.statusCode).toBe(599);
+  });
+
+  it("rejects a log with neither response nor error", () => {
+    expect(parseOpenAILog({ request: groqLog.request }).success).toBe(false);
   });
 });

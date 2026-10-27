@@ -10,6 +10,7 @@ import type {
 } from "@llm-lens/types";
 import type { ParseResult } from "./types.js";
 import { computeCost } from "./pricing.js";
+import { contextMetadata } from "./openai.js";
 
 export function parseAnthropicLog(raw: AnthropicRawLog): ParseResult {
   try {
@@ -20,6 +21,34 @@ export function parseAnthropicLog(raw: AnthropicRawLog): ParseResult {
     const messages: TraceMessage[] = request.messages.map((msg) =>
       normalizeMessage(msg.role, msg.content)
     );
+    const context = contextMetadata(raw.metadata);
+
+    if (!response) {
+      if (!raw.error) return { success: false, error: "Log needs either a response or an error" };
+      return {
+        success: true,
+        trace: {
+          id: `err_${crypto.randomUUID()}`,
+          timestamp: (timestamp ? new Date(timestamp) : new Date()).toISOString(),
+          messages,
+          usage: { inputTokens: 0, outputTokens: 0 },
+          metadata: {
+            model: request.model,
+            provider: "anthropic",
+            durationMs,
+            costUsd: 0,
+            temperature: request.temperature,
+            maxTokens: request.max_tokens,
+            systemPrompt,
+            statusCode: raw.error.status ?? 599,
+            error: raw.error.message || "Request failed",
+            errorCode: raw.error.code ?? raw.error.type,
+            ...context,
+          },
+          raw,
+        },
+      };
+    }
 
     const assistantMessage = normalizeAssistantResponse(response.content);
     messages.push(assistantMessage);
@@ -47,6 +76,7 @@ export function parseAnthropicLog(raw: AnthropicRawLog): ParseResult {
         temperature: request.temperature,
         maxTokens: request.max_tokens,
         systemPrompt,
+        ...context,
       },
       raw,
     };

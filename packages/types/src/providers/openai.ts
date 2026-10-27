@@ -1,15 +1,32 @@
-/** Raw OpenAI Chat Completions API request/response log */
+import type { TraceContext } from "../trace.js";
+
+/**
+ * Raw OpenAI Chat Completions API request/response log. A failed call has `error`
+ * instead of `response`.
+ */
 export interface OpenAIRawLog {
   request: OpenAIRequest;
-  response: OpenAIResponse;
+  response?: OpenAIResponse;
+  error?: OpenAIRawError;
   timestamp?: number;
   durationMs?: number;
+  /** Optional caller context (label, env, session...) */
+  metadata?: TraceContext;
+}
+
+export interface OpenAIRawError {
+  /** HTTP status, absent for network errors and timeouts */
+  status?: number;
+  message: string;
+  code?: string;
+  type?: string;
 }
 
 export interface OpenAIRequest {
   model: string;
   messages: OpenAIMessage[];
   max_tokens?: number;
+  max_completion_tokens?: number;
   temperature?: number;
   tools?: OpenAITool[];
   tool_choice?: "auto" | "none" | "required" | { type: "function"; function: { name: string } };
@@ -19,7 +36,7 @@ export interface OpenAIRequest {
 }
 
 export type OpenAIMessage =
-  | { role: "system"; content: string }
+  | { role: "system" | "developer"; content: string }
   | { role: "user"; content: string | OpenAIContentPart[] }
   | { role: "assistant"; content: string | null; tool_calls?: OpenAIToolCall[] }
   | { role: "tool"; tool_call_id: string; content: string };
@@ -54,6 +71,9 @@ export interface OpenAIResponse {
       role: "assistant";
       content: string | null;
       tool_calls?: OpenAIToolCall[];
+      /** Reasoning trace returned by some providers (Groq gpt-oss, DeepSeek...) */
+      reasoning?: string;
+      reasoning_content?: string;
     };
     finish_reason: "stop" | "length" | "tool_calls" | "content_filter" | null;
   }>;
