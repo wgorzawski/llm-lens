@@ -6,29 +6,87 @@
   ],
   "timezone": "Europe/Warsaw",
   "rangeStrategy": "pin",
-  "postUpdateOptions": ["pnpmDedupe"],
+  "postUpdateOptions": [
+    "pnpmDedupe"
+  ],
   "lockFileMaintenance": {
     "enabled": true
   },
-  "labels": ["dependencies"],
+  "labels": [
+    "dependencies"
+  ],
   "packageRules": [
     {
       "groupName": "nuxt",
-      "matchPackageNames": ["nuxt", "nitropack", "vue", "vue-router", "@nuxt/**"]
+      "matchPackageNames": [
+        "nuxt",
+        "nitropack",
+        "vue",
+        "vue-router",
+        "@nuxt/**"
+      ]
     },
     {
       "groupName": "fastify",
-      "matchPackageNames": ["fastify", "@fastify/**"]
+      "matchPackageNames": [
+        "fastify",
+        "@fastify/**"
+      ]
     },
     {
-      "matchDepTypes": ["devDependencies"],
-      "matchUpdateTypes": ["patch"],
+      "matchDepTypes": [
+        "devDependencies"
+      ],
+      "matchUpdateTypes": [
+        "patch"
+      ],
       "automerge": true
     },
     {
-      "matchManagers": ["github-actions"],
-      "matchUpdateTypes": ["minor", "patch"],
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
       "automerge": true
+    },
+    {
+      "description": "engines are minimum supported versions, not pins - and Node/pnpm majors are bumped by hand (.nvmrc, server)",
+      "matchDepTypes": [
+        "engines"
+      ],
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "enabled": false
+    },
+    {
+      "matchDepTypes": [
+        "engines"
+      ],
+      "rangeStrategy": "replace"
+    },
+    {
+      "description": "@llm-lens/instrument is a library: its peer ranges must stay wide and its dev SDK versions follow them",
+      "matchFileNames": [
+        "packages/**"
+      ],
+      "matchDepTypes": [
+        "peerDependencies"
+      ],
+      "enabled": false
+    },
+    {
+      "matchFileNames": [
+        "packages/**"
+      ],
+      "matchDepTypes": [
+        "devDependencies",
+        "dependencies"
+      ],
+      "rangeStrategy": "bump"
     }
   ]
 }
