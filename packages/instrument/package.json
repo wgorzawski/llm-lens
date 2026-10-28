@@ -33,6 +33,6 @@
     "@anthropic-ai/sdk": "^0.137.0",
     "openai": "^4.104.0",
     "typescript": "^5.8.3",
-    "vitest": "^3.2.6"
+    "vitest": "^3.2.7"
   }
 }
