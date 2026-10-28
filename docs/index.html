@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>LLM Lens — See every LLM call your code makes</title>
-  <meta name="description" content="LLM Lens captures, stores, and visualizes your OpenAI, Anthropic, and Vercel AI SDK calls in real-time — with one line of code." />
+  <meta name="description" content="Self-hosted observability for LLM calls. LLM Lens captures, stores, and visualizes every OpenAI, Anthropic, Groq, Gemini, Mistral, DeepSeek, OpenRouter, Ollama and Vercel AI SDK call — with one line of code." />
   <meta property="og:title" content="LLM Lens — See every LLM call your code makes" />
   <meta property="og:description" content="Captures, stores, and visualizes your LLM calls in real-time — with one line of code." />
   <meta property="og:type" content="website" />
@@ -1101,7 +1101,7 @@
         Open source &amp; free to self-host
       </div>
       <h1 class="hero-title">See every LLM call<br>your code makes.</h1>
-      <p class="hero-sub">LLM Lens captures, stores, and visualizes your OpenAI, Anthropic, and Vercel AI SDK calls in real-time — with one line of code.</p>
+      <p class="hero-sub">Self-hosted observability for LLM calls. LLM Lens captures, stores, and visualizes every OpenAI, Anthropic, Groq, Gemini, Mistral, DeepSeek, OpenRouter, Ollama and Vercel AI SDK call — with one line of code.</p>
       <div class="hero-ctas">
         <a href="https://github.com/wgorzawski/llm-lens" target="_blank" rel="noopener" class="btn btn-primary btn-lg">
           Get started — it's free
@@ -1193,7 +1193,7 @@
     <div class="center reveal">
       <span class="section-label">Quick Start</span>
       <h2 class="section-heading">Up and running<br>in under a minute.</h2>
-      <p class="section-sub">Two steps. No config files, no accounts, no infrastructure.</p>
+      <p class="section-sub">Two steps. One secret in .env, one container command — your data stays on your server.</p>
     </div>
 
     <div class="qs-grid">
@@ -1206,9 +1206,10 @@
             <button class="copy-btn">Copy</button>
           </div>
           <div class="code-body">
-<pre><span class="cm"># clone and start the server</span>
+<pre><span class="cm"># clone, set JWT_SECRET in .env and start (Docker)</span>
 <span class="fn">git</span> clone https://github.com/wgorzawski/llm-lens
-<span class="kw">cd</span> llm-lens <span class="op">&amp;&amp;</span> <span class="fn">pnpm</span> install <span class="op">&amp;&amp;</span> <span class="fn">pnpm</span> dev</pre>
+<span class="kw">cd</span> llm-lens <span class="op">&amp;&amp;</span> <span class="fn">cp</span> .env.docker.example .env
+<span class="fn">docker</span> compose up -d   <span class="cm"># → http://localhost:3000</span></pre>
           </div>
         </div>
       </div>
