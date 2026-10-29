@@ -121,7 +121,7 @@ importers:
         specifier: workspace:*
         version: link:../../packages/instrument
       openai:
-        specifier: '4'
+        specifier: 4.104.0
         version: 4.104.0(ws@8.21.0)
       vue:
         specifier: 3.5.13
