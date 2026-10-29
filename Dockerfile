@@ -4,7 +4,7 @@
 #   docker run -p 3001:3001 -v llmlens:/data -e JWT_SECRET=... llm-lens api
 #   docker run -p 3000:3000 -e NUXT_PUBLIC_API_BASE=http://localhost:3001/api llm-lens web
 
-FROM node:24.22.1-bookworm-slim AS build
+FROM node:24.22.2-bookworm-slim AS build
 WORKDIR /app
 ENV HUSKY=0 CI=true
 RUN corepack enable
@@ -24,7 +24,7 @@ RUN pnpm --filter @llm-lens/types build \
  && NODE_OPTIONS=--max-old-space-size=4096 pnpm --filter @llm-lens/web build
 
 # Production dependencies of the API only (the Nuxt output bundles its own)
-FROM node:24.22.1-bookworm-slim AS deps
+FROM node:24.22.2-bookworm-slim AS deps
 WORKDIR /app
 ENV HUSKY=0 CI=true
 RUN corepack enable
@@ -34,7 +34,7 @@ COPY packages/parsers/package.json packages/parsers/
 COPY apps/api/package.json apps/api/
 RUN pnpm install --frozen-lockfile --prod --ignore-scripts --filter "@llm-lens/api..."
 
-FROM node:24.22.1-bookworm-slim
+FROM node:24.22.2-bookworm-slim
 WORKDIR /app
 ENV NODE_ENV=production \
     DATABASE_URL=file:/data/llm-lens.db \
